@@ -224,6 +224,11 @@ impl FinalBuildConfiguration {
                 ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
                 ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
                 ("skia_use_system_zlib", yes_if(use_system_libraries)),
+                ("skia_use_freetype", yes()),
+                ("skia_use_fonthost_mac", no()),
+                ("skia_use_system_freetype2", no()),
+                //("skia_use_fontconfig", yes()),
+                ("skia_enable_fontmgr_custom_empty", yes()),
                 ("skia_use_xps", no()),
                 ("skia_use_dng_sdk", yes_if(features.dng)),
                 ("cc", quote(&build.cc)),
@@ -333,6 +338,7 @@ impl FinalBuildConfiguration {
                     args.push(("ndk_api", android::API_LEVEL.into()));
                     args.push(("target_cpu", quote(clang::target_arch(arch))));
                     args.push(("skia_use_system_freetype2", yes_if(use_system_libraries)));
+                    args.push(("skia_use_freetype", yes()));
                     args.push(("skia_enable_fontmgr_android", yes()));
                     // Enabling fontmgr_android implicitly enables expat.
                     // We make this explicit to avoid relying on an expat installed
@@ -679,6 +685,8 @@ pub fn build_skia(
     config: &BinariesConfiguration,
     ninja_command: &Path,
 ) {
+    cargo::warning(format!("output path {}", ninja_command.display()));
+
     let ninja_status = Command::new(ninja_command)
         .args(&["-C", config.output_directory.to_str().unwrap()])
         .stdout(Stdio::inherit())
