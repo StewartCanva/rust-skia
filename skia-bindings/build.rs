@@ -34,8 +34,7 @@ mod env {
 
     /// Force to build Skia, even if there is a binary available.
     pub fn force_skia_build() -> bool {
-        true
-        //cargo::env_var("FORCE_SKIA_BUILD").is_some()
+        cargo::env_var("FORCE_SKIA_BUILD").is_some()
     }
 
     /// A boolean specifying whether to build Skia's dependencies or not. If not, the system's
