@@ -697,8 +697,6 @@ pub fn build_skia(
     config: &BinariesConfiguration,
     ninja_command: &Path,
 ) {
-    cargo::warning(format!("output path {}", ninja_command.display()));
-
     let ninja_status = Command::new(ninja_command)
         .args(&["-C", config.output_directory.to_str().unwrap()])
         .stdout(Stdio::inherit())
