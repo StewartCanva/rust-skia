@@ -80,7 +80,6 @@ fn main() {
     // skip attempting to download?
     //
     if let Some(source_dir) = env::source_dir() {
-        cargo::warning("Doing offline build");
         println!("STARTING OFFLINE BUILD");
 
         let final_configuration = skia::FinalBuildConfiguration::from_build_configuration(
@@ -102,11 +101,9 @@ fn main() {
         //
 
         let build_skia = env::force_skia_build() || {
-            cargo::warning("Forcing skia build");
             let force_download = env::force_skia_binaries_download();
             if let Some((tag, key)) = should_try_download_binaries(&binaries_config, force_download)
             {
-                cargo::warning("Downlading skia binaries");
                 println!(
                     "TRYING TO DOWNLOAD AND INSTALL SKIA BINARIES: {}/{}",
                     tag, key
@@ -137,7 +134,6 @@ fn main() {
         //
 
         if build_skia {
-            cargo::warning("Building skia");
             println!("STARTING A FULL BUILD");
             let final_configuration = skia::FinalBuildConfiguration::from_build_configuration(
                 &build_config,
@@ -152,7 +148,6 @@ fn main() {
                 false,
             );
         }
-
     };
 
     binaries_config.commit_to_cargo();
