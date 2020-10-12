@@ -10,6 +10,8 @@ use skia_bindings::SkImageGenerator;
 use std::ffi::c_void;
 
 pub type ImageGenerator = RefHandle<SkImageGenerator>;
+unsafe impl Send for ImageGenerator {}
+unsafe impl Sync for ImageGenerator {}
 
 impl NativeDrop for SkImageGenerator {
     fn drop(&mut self) {
@@ -31,7 +33,7 @@ impl RefHandle<SkImageGenerator> {
     }
 
     #[cfg(feature = "gpu")]
-    pub fn is_valid(&self, mut context: Option<&mut gpu::Context>) -> bool {
+    pub fn is_valid(&self, mut context: Option<&mut gpu::RecordingContext>) -> bool {
         unsafe { sb::C_SkImageGenerator_isValid(self.native(), context.native_ptr_or_null_mut()) }
     }
 
@@ -49,6 +51,8 @@ impl RefHandle<SkImageGenerator> {
                 .getPixels(info.native(), pixels.as_mut_ptr() as _, row_bytes)
         }
     }
+
+    // TODO: m86: get_pixels(&Pixmap)
 
     pub fn query_yuva8(
         &self,
@@ -70,7 +74,6 @@ impl RefHandle<SkImageGenerator> {
         .if_true_some((size_info, indices, cs))
     }
 
-    // TODO: why does planes need to be a mutable reference?
     pub fn get_yuva8_planes(
         &mut self,
         size_info: &YUVASizeInfo,
@@ -111,13 +114,13 @@ impl RefHandle<SkImageGenerator> {
         unimplemented!("removed without replacement")
     }
 
-    pub fn from_encoded(encoded: Data) -> Option<Self> {
-        Self::from_ptr(unsafe { sb::C_SkImageGenerator_MakeFromEncoded(encoded.into_ptr()) })
+    pub fn from_encoded(encoded: impl Into<Data>) -> Option<Self> {
+        Self::from_ptr(unsafe { sb::C_SkImageGenerator_MakeFromEncoded(encoded.into().into_ptr()) })
     }
 
     pub fn from_picture(
         size: ISize,
-        picture: Picture,
+        picture: impl Into<Picture>,
         matrix: Option<&Matrix>,
         paint: Option<&Paint>,
         bit_depth: image::BitDepth,
@@ -126,7 +129,7 @@ impl RefHandle<SkImageGenerator> {
         Self::from_ptr(unsafe {
             sb::C_SkImageGenerator_MakeFromPicture(
                 size.native(),
-                picture.into_ptr(),
+                picture.into().into_ptr(),
                 matrix.native_ptr_or_null(),
                 paint.native_ptr_or_null(),
                 bit_depth,

@@ -1,3 +1,7 @@
+#ifndef SK_SHAPER_HARFBUZZ_AVAILABLE
+    #define SK_SHAPER_HARFBUZZ_AVAILABLE
+#endif
+
 #include "modules/skshaper/include/SkShaper.h"
 #include "include/core/SkFontMgr.h"
 
@@ -18,7 +22,11 @@ extern "C" SkShaper* C_SkShaper_MakeShapeDontWrapOrReorder(SkFontMgr* fontMgr) {
 }
 
 extern "C" SkShaper* C_SkShaper_MakeCoreText() {
+#ifdef SK_SHAPER_CORETEXT_AVAILABLE
     return SkShaper::MakeCoreText().release();
+#else
+    return nullptr;
+#endif
 }
 
 extern "C" SkShaper* C_SkShaper_Make(SkFontMgr* fontMgr) {

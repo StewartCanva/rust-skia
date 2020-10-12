@@ -1,5 +1,6 @@
 #include <cassert>
 #include <tuple>
+#include <vector>
 
 #include "bindings.h"
 // codec/
@@ -35,6 +36,7 @@
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathMeasure.h"
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkPicture.h"
@@ -98,6 +100,7 @@
 
 #include "include/effects/SkPerlinNoiseShader.h"
 #include "include/effects/SkShaderMaskFilter.h"
+#include "include/effects/SkStrokeAndFillPathEffect.h"
 #include "include/effects/SkTableColorFilter.h"
 #include "include/effects/SkTableMaskFilter.h"
 #include "include/effects/SkTileImageFilter.h"
@@ -137,6 +140,14 @@ extern "C" SkIRect C_SkCodec_bounds(const SkCodec* self) {
 
 extern "C" SkEncodedOrigin C_SkCodec_getOrigin(const SkCodec* self) {
     return self->getOrigin();
+}
+
+extern "C" SkISize C_SkCodec_getScaledDimensions(const SkCodec* self, float desiredScale) {
+    return self->getScaledDimensions(desiredScale);
+}
+
+extern "C" bool C_SkCodec_getValidSubset(const SkCodec* self, SkIRect* desiredSubset) {
+    return self->getValidSubset(desiredSubset);
 }
 
 extern "C" SkEncodedImageFormat C_SkCodec_getEncodedFormat(const SkCodec* self) {
@@ -213,6 +224,10 @@ extern "C" const SkSurfaceProps* C_SkSurface_props(const SkSurface* self) {
     return &self->props();
 }
 
+extern "C" bool C_SkSurface_draw(SkSurface* self, const SkDeferredDisplayList* displayList) {
+    return self->draw(sp(displayList));
+}
+
 //
 // core/SkSurfaceCharacterization.h
 //
@@ -254,16 +269,12 @@ extern "C" SkImage* C_SkImage_MakeFromBitmap(const SkBitmap* bitmap) {
     return SkImage::MakeFromBitmap(*bitmap).release();
 }
 
-extern "C" SkImage* C_SkImage_MakeFromGenerator(SkImageGenerator* imageGenerator, const SkIRect* subset) {
-    return SkImage::MakeFromGenerator(std::unique_ptr<SkImageGenerator>(imageGenerator), subset).release();
+extern "C" SkImage* C_SkImage_MakeFromGenerator(SkImageGenerator* imageGenerator) {
+    return SkImage::MakeFromGenerator(std::unique_ptr<SkImageGenerator>(imageGenerator)).release();
 }
 
-extern "C" SkImage* C_SkImage_MakeFromEncoded(SkData* encoded, const SkIRect* subset) {
-    return SkImage::MakeFromEncoded(sp(encoded), subset).release();
-}
-
-extern "C" SkImage* C_SkImage_DecodeToRaster(const void* encoded, size_t length, const SkIRect* subset) {
-    return SkImage::DecodeToRaster(encoded, length, subset).release();
+extern "C" SkImage* C_SkImage_MakeFromEncoded(SkData* encoded) {
+    return SkImage::MakeFromEncoded(sp(encoded)).release();
 }
 
 extern "C" SkImage* C_SkImage_MakeFromPicture(
@@ -280,6 +291,19 @@ extern "C" SkShader* C_SkImage_makeShader(const SkImage* self, SkTileMode tileMo
     return self->makeShader(tileMode1, tileMode2, localMatrix).release();
 }
 
+extern "C" SkShader* C_SkImage_makeShaderWithFilterOptions(const SkImage* self, SkTileMode tileMode1, SkTileMode tileMode2, SkFilterOptions filterOptions, const SkMatrix* localMatrix) {
+    return self->makeShader(tileMode1, tileMode2, filterOptions, localMatrix).release();
+}
+
+extern "C" SkShader* C_SkImage_makeShaderWithCubicResampler(const SkImage* self, SkTileMode tileMode1, SkTileMode tileMode2, SkImage::CubicResampler cubicResampler, const SkMatrix* localMatrix) {
+    return self->makeShader(tileMode1, tileMode2, cubicResampler, localMatrix).release();
+}
+
+extern "C" SkShader *C_SkImage_makeShaderWithQuality(const SkImage *self, SkTileMode tileMode1, SkTileMode tileMode2, const SkMatrix *localMatrix, SkFilterQuality filterQuality)
+{
+    return self->makeShader(tileMode1, tileMode2, localMatrix, filterQuality).release();
+}
+
 extern "C" SkData* C_SkImage_encodeToData(const SkImage* self, SkEncodedImageFormat imageFormat, int quality) {
     return self->encodeToData(imageFormat, quality).release();
 }
@@ -288,8 +312,8 @@ extern "C" SkData* C_SkImage_refEncodedData(const SkImage* self) {
     return self->refEncodedData().release();
 }
 
-extern "C" SkImage* C_SkImage_makeSubset(const SkImage* self, const SkIRect* subset) {
-    return self->makeSubset(*subset).release();
+extern "C" SkImage* C_SkImage_makeSubset(const SkImage* self, const SkIRect* subset, GrDirectContext* direct) {
+    return self->makeSubset(*subset, direct).release();
 }
 
 extern "C" SkImage* C_SkImage_makeNonTextureImage(const SkImage* self) {
@@ -301,15 +325,15 @@ extern "C" SkImage* C_SkImage_makeRasterImage(const SkImage* self, SkImage::Cach
 }
 
 // note: available without GPU support (GrContext may be null).
-extern "C" SkImage *C_SkImage_makeWithFilter(const SkImage *self, GrContext *context,
+extern "C" SkImage *C_SkImage_makeWithFilter(const SkImage *self, GrRecordingContext *context,
                                              const SkImageFilter *filter, const SkIRect *subset,
                                              const SkIRect *clipBounds, SkIRect *outSubset,
                                              SkIPoint *offset) {
     return self->makeWithFilter(context, filter, *subset, *clipBounds, outSubset, offset).release();
 }
 
-extern "C" SkImage* C_SkImage_makeColorSpace(const SkImage* self, SkColorSpace* target) {
-    return self->makeColorSpace(sp(target)).release();
+extern "C" SkImage* C_SkImage_makeColorSpace(const SkImage* self, SkColorSpace* target, GrDirectContext* direct) {
+    return self->makeColorSpace(sp(target), direct).release();
 }
 
 extern "C" SkImage* C_SkImage_reinterpretColorSpace(const SkImage* self, SkColorSpace* newColorSpace) {
@@ -432,6 +456,45 @@ extern "C" void C_SkPaint_setImageFilter(SkPaint* self, SkImageFilter* imageFilt
 // core/SkPath.h
 //
 
+extern "C" void C_SkPath_Construct(SkPath* uninitialized) {
+    new(uninitialized) SkPath();
+}
+
+extern "C" void C_SkPath_Make(SkPath* uninitialized, 
+    const SkPoint pts[], int pointCount,
+    const uint8_t vbs[], int verbCount,
+    const SkScalar ws[], int wCount,
+    SkPathFillType ft, bool isVolatile) {
+    new(uninitialized) SkPath(SkPath::Make(pts, pointCount, vbs, verbCount, ws, wCount, ft, isVolatile));
+}
+
+extern "C" void C_SkPath_Rect(SkPath* uninitialized,
+    const SkRect& r, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::Rect(r, dir));
+}
+
+extern "C" void C_SkPath_Oval(SkPath* uninitialized,
+    const SkRect& r, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::Oval(r, dir));
+}
+
+extern "C" void C_SkPath_Circle(SkPath* uninitialized,
+    SkScalar x, SkScalar y, SkScalar r, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::Circle(x, y, r, dir));
+}
+
+extern "C" void C_SkPath_RRect(SkPath* uninitialized,
+    const SkRRect& rr, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::RRect(rr, dir));
+}
+
+extern "C" void C_SkPath_Polygon(SkPath* uninitialized,
+    const SkPoint pts[], int count, bool isClosed,
+    SkPathFillType ft,
+    bool isVolatile) {
+    new(uninitialized) SkPath(SkPath::Polygon(pts, count, isClosed, ft, isVolatile));
+}
+
 extern "C" void C_SkPath_destruct(const SkPath* self) {
     self->~SkPath();
 }
@@ -494,6 +557,22 @@ extern "C" const SkRect* C_SkPath_getBounds(const SkPath* self) {
 
 extern "C" uint32_t C_SkPath_getSegmentMasks(const SkPath* self) {
     return self->getSegmentMasks();
+}
+
+//
+// core/SkPathBuilder.h
+//
+
+extern "C" void C_SkPathBuilder_destruct(SkPathBuilder* self) {
+    self->~SkPathBuilder();
+}
+
+extern "C" void C_SkPathBuilder_snapshot(SkPathBuilder* self, SkPath* path) {
+    *path = self->snapshot();
+}
+
+extern "C" void C_SkPathBuilder_detach(SkPathBuilder* self, SkPath* path) {
+    *path = self->detach();
 }
 
 //
@@ -865,8 +944,8 @@ extern "C" uint32_t C_SkPicture_uniqueID(const SkPicture* self) {
     return self->uniqueID();
 }
 
-extern "C" int C_SkPicture_approximateOpCount(const SkPicture* self) {
-    return self->approximateOpCount();
+extern "C" int C_SkPicture_approximateOpCount(const SkPicture* self, bool nested) {
+    return self->approximateOpCount(nested);
 }
 
 // note: returning size_t produces a linker error.
@@ -1247,14 +1326,6 @@ extern "C" SkVertices* C_SkVertices_MakeCopy(
     return SkVertices::MakeCopy(mode, vertexCount, positions, texs, colors, indexCount, indices).release();
 }
 
-extern "C" SkVertices* C_SkVertices_Decode(const void* buffer, size_t length) {
-    return SkVertices::Decode(buffer, length).release();
-}
-
-extern "C" SkData* C_SkVertices_encode(const SkVertices* self) {
-    return self->encode().release();
-}
-
 //
 // SkVertices::Builder
 //
@@ -1371,20 +1442,10 @@ extern "C" SkColorFilter* C_SkColorFilter_makeComposed(const SkColorFilter* self
     return self->makeComposed(sp(inner)).release();
 }
 
-extern "C" bool C_SkColorFilter_asAColorMode(const SkColorFilter* self, SkColor* color, SkBlendMode* mode) {
-    return self->asAColorMode(color, mode);
-}
-
-extern "C" bool C_SkColorFilter_asAColorMatrix(const SkColorFilter* self, SkScalar matrix[20]) {
-    return self->asAColorMatrix(matrix);
-}
-
-extern "C" uint32_t C_SkColorFilter_getFlags(const SkColorFilter* self) {
-    return self->getFlags();
-}
-
-extern "C" SkColorFilter* C_SkColorFilter_Deserialize(const void* data, size_t size) {
-    return SkColorFilter::Deserialize(data, size).release();
+extern "C" SkColorFilter* C_SkColorFilter_Deserialize(const void* data, size_t length) {
+    // TODO: there is no "official" Deserialize wrapper in SkColorFilter, so we
+    //       are not sure if deserialization is supported at all.
+    return static_cast<SkColorFilter*>(SkFlattenable::Deserialize(SkFlattenable::kSkColorFilter_Type, data, length).release());
 }
 
 //
@@ -1477,8 +1538,20 @@ extern "C" SkDeferredDisplayList* C_SkDeferredDisplayListRecorder_detach(SkDefer
     return self->detach().release();
 }
 
-extern "C" void C_SkDeferredDisplayList_delete(SkDeferredDisplayList* self) {
-    delete self;
+//
+// core/SkDeferredDisplayList.h
+//
+
+extern "C" void C_SkDeferredDisplayList_ref(const SkDeferredDisplayList* self) {
+    self->ref();
+}
+
+extern "C" void C_SkDeferredDisplayList_unref(const SkDeferredDisplayList* self) {
+    self->unref();
+}
+
+extern "C" bool C_SkDeferredDisplayList_unique(const SkDeferredDisplayList* self) {
+    return self->unique();
 }
 
 //
@@ -2256,12 +2329,6 @@ SkShader *C_SkRuntimeEffect_makeShader(SkRuntimeEffect *self, SkData *inputs, Sk
     return self->makeShader(sp(inputs), childrenSPs, childCount, localMatrix, isOpaque).release();
 }
 
-SkColorFilter *
-C_SkRuntimeEffect_makeColorFilter2(SkRuntimeEffect *self, SkData *inputs, SkColorFilter **children, size_t childCount) {
-    auto childrenSPs = reinterpret_cast<sk_sp<SkColorFilter> *>(children);
-    return self->makeColorFilter(sp(inputs), childrenSPs, childCount).release();
-}
-
 SkColorFilter* C_SkRuntimeEffect_makeColorFilter(SkRuntimeEffect* self, SkData* inputs) {
     return self->makeColorFilter(sp(inputs)).release();
 }
@@ -2274,10 +2341,10 @@ uint32_t C_SkRuntimeEffect_hash(const SkRuntimeEffect *self) {
     return self->hash();
 }
 
-const SkRuntimeEffect::Variable* C_SkRuntimeEffect_inputs(const SkRuntimeEffect* self, size_t* count) {
-    auto inputs = self->inputs();
-    *count = inputs.count();
-    return &*inputs.begin();
+const SkRuntimeEffect::Uniform* C_SkRuntimeEffect_uniforms(const SkRuntimeEffect* self, size_t* count) {
+    auto uniforms = self->uniforms();
+    *count = uniforms.count();
+    return &*uniforms.begin();
 }
 
 const SkString* C_SkRuntimeEffect_children(const SkRuntimeEffect* self, size_t* count) {
@@ -2300,6 +2367,14 @@ const SkRuntimeEffect::Varying* C_SkRuntimeEffect_varyings(const SkRuntimeEffect
 
 extern "C" SkMaskFilter* C_SkShaderMaskFilter_Make(SkShader* shader) {
     return SkShaderMaskFilter::Make(sp(shader)).release();
+}
+
+//
+// effects/SkStrokeAndFillPathEffect.h
+//
+
+extern "C" SkPathEffect* C_SkStrokeAndFillePathEffect_Make() {
+    return SkStrokeAndFillPathEffect::Make().release();
 }
 
 //
@@ -2526,6 +2601,59 @@ C_SkImageFilters_SpotLitSpecular(const SkPoint3 &location,
 //
 // docs/SkPDFDocument.h
 //
+
+extern "C" void C_SkPDF_AttributeList_destruct(SkPDF::AttributeList *self) {
+    self->~AttributeList();
+}
+
+extern "C" void C_SkPDF_AttributeList_appendFloatArray(SkPDF::AttributeList *self, const char *owner, const char *name, const float *const value, size_t len) {
+    std::vector<float> v(value, value + len);
+    self->appendFloatArray(owner, name, v);
+}
+
+extern "C" void C_SkPDF_AttributeList_appendStringArray(SkPDF::AttributeList *self, const char *owner, const char *name, const SkString *const value, size_t len) {
+    std::vector<SkString> v(value, value + len);
+    self->appendStringArray(owner, name, v);
+}
+
+extern "C" SkPDF::StructureElementNode *C_SkPDF_StructureElementNode_New() {
+    return new SkPDF::StructureElementNode();
+}
+
+extern "C" void C_SkPDF_StructureElementNode_delete(SkPDF::StructureElementNode *self) {
+    delete self;
+}
+
+extern "C" void C_SkPDF_StructureElementNode_setChildVector(SkPDF::StructureElementNode *self, SkPDF::StructureElementNode **nodes, size_t len)
+{
+    self->fChildVector = std::vector<std::unique_ptr<SkPDF::StructureElementNode>>();
+    self->fChildVector.reserve(len);
+    for (size_t i = 0; i != len; ++i)
+    {
+        auto node = nodes[i];
+        nodes[i] = nullptr;
+        self->fChildVector.push_back(std::unique_ptr<SkPDF::StructureElementNode>(node));
+    }
+}
+
+extern "C" void C_SkPDF_StructElementNode_appendChild(SkPDF::StructureElementNode *self, SkPDF::StructureElementNode *node)
+{
+    self->fChildVector.push_back(std::unique_ptr<SkPDF::StructureElementNode>(node));
+}
+
+extern "C" size_t C_SkPDF_StructureElementNode_getChildVector(const SkPDF::StructureElementNode *self, SkPDF::StructureElementNode **nodes)
+{
+    if (self->fChildVector.empty())
+    {
+        *nodes = nullptr;
+        return 0;
+    }
+    else
+    {
+        *nodes = &*self->fChildVector.front();
+        return self->fChildVector.size();
+    }
+}
 
 extern "C" void C_SkPDF_Metadata_Construct(SkPDF::Metadata* uninitialized) {
     new(uninitialized)SkPDF::Metadata();

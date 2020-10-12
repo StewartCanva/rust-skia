@@ -53,6 +53,7 @@ pub mod document;
 pub use document::Document;
 
 pub mod draw_looper;
+#[allow(deprecated)]
 pub use draw_looper::DrawLooper;
 
 pub mod drawable;
@@ -96,7 +97,7 @@ pub use font_types::*;
 pub mod graphics;
 
 pub mod image;
-pub use image::Image;
+pub use image::{FilterOptions, Image, MipmapMode, SamplingMode};
 
 mod image_encoder;
 pub use image_encoder::*;
@@ -135,6 +136,9 @@ pub use paint::Style as PaintStyle;
 
 pub mod path;
 pub use path::Path;
+
+mod path_builder;
+pub use path_builder::PathBuilder;
 
 pub mod path_effect;
 pub use path_effect::PathEffect;

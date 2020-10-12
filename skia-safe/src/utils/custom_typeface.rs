@@ -1,9 +1,11 @@
-use crate::prelude::*;
+use crate::{prelude::*, FontMetrics, FontStyle};
 use crate::{GlyphId, Image, Paint, Path, Picture, Typeface};
 use skia_bindings as sb;
 use skia_bindings::SkCustomTypefaceBuilder;
 
 pub type CustomTypefaceBuilder = Handle<SkCustomTypefaceBuilder>;
+unsafe impl Send for CustomTypefaceBuilder {}
+unsafe impl Sync for CustomTypefaceBuilder {}
 
 impl NativeDrop for SkCustomTypefaceBuilder {
     fn drop(&mut self) {
@@ -12,8 +14,8 @@ impl NativeDrop for SkCustomTypefaceBuilder {
 }
 
 impl Handle<SkCustomTypefaceBuilder> {
-    pub fn new(num_glyphs: usize) -> Self {
-        Self::from_native(unsafe { SkCustomTypefaceBuilder::new(num_glyphs.try_into().unwrap()) })
+    pub fn new() -> Self {
+        Self::from_native(unsafe { SkCustomTypefaceBuilder::new() })
     }
 
     pub fn set_glyph<'a>(
@@ -21,23 +23,41 @@ impl Handle<SkCustomTypefaceBuilder> {
         glyph_id: GlyphId,
         advance: f32,
         typeface_glyph: impl Into<TypefaceGlyph<'a>>,
-    ) {
+    ) -> &mut Self {
         unsafe {
             match typeface_glyph.into() {
                 TypefaceGlyph::Path(path) => {
                     self.native_mut().setGlyph(glyph_id, advance, path.native())
                 }
                 TypefaceGlyph::PathAndPaint(_path, _paint) => {
-                    unimplemented!("TypefaceGlyph::PathAndPaint is not supported yet, Skia implementation is missing (m84)")
+                    unimplemented!("TypefaceGlyph::PathAndPaint is not supported yet, Skia implementation is missing (last checked: m86)")
                 }
                 TypefaceGlyph::Image { .. } => {
-                    unimplemented!("TypefaceGlyph::PathAndPaint is not supported yet, Skia implementation is missing (m84)")
+                    unimplemented!("TypefaceGlyph::PathAndPaint is not supported yet, Skia implementation is missing (last checked: m86)")
                 }
                 TypefaceGlyph::Picture(_picture) => {
-                    unimplemented!("TypefaceGlyph::Picture is not supported yet, Skia implementation is missing (m84)")
+                    unimplemented!("TypefaceGlyph::Picture is not supported yet, Skia implementation is missing (last checked: m86)")
                 }
             }
         }
+        self
+    }
+
+    pub fn set_metrics(
+        &mut self,
+        font_metrics: &FontMetrics,
+        scale: impl Into<Option<f32>>,
+    ) -> &mut Self {
+        unsafe {
+            self.native_mut()
+                .setMetrics(font_metrics.native(), scale.into().unwrap_or(1.0))
+        }
+        self
+    }
+
+    pub fn set_font_style(&mut self, font_style: FontStyle) -> &mut Self {
+        unsafe { self.native_mut().setFontStyle(font_style.into_native()) }
+        self
     }
 
     pub fn detach(&mut self) -> Option<Typeface> {
@@ -70,9 +90,18 @@ impl From<(Image, f32)> for TypefaceGlyph<'_> {
     }
 }
 
+impl From<(&Image, f32)> for TypefaceGlyph<'_> {
+    fn from((image, scale): (&Image, f32)) -> Self {
+        Self::Image {
+            image: image.clone(),
+            scale,
+        }
+    }
+}
+
 #[test]
 fn build_custom_typeface() {
-    let mut builder = CustomTypefaceBuilder::new(2);
+    let mut builder = CustomTypefaceBuilder::new();
     let path = Path::new();
     builder.set_glyph(10u16, 0.0, &path);
     builder.set_glyph(11u16, 0.0, &path);

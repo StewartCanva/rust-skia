@@ -5,6 +5,8 @@ use skia_bindings as sb;
 use skia_bindings::{SkPicture, SkRefCntBase};
 
 pub type Picture = RCHandle<SkPicture>;
+unsafe impl Sync for Picture {}
+unsafe impl Send for Picture {}
 
 impl NativeRefCountedBase for SkPicture {
     type Base = SkRefCntBase;
@@ -27,8 +29,8 @@ impl RCHandle<SkPicture> {
 
     // TODO: AbortCallback and the function that use it.
 
-    pub fn playback(&self, mut canvas: impl AsMut<Canvas>) {
-        unsafe { sb::C_SkPicture_playback(self.native(), canvas.as_mut().native_mut()) }
+    pub fn playback(&self, canvas: &mut Canvas) {
+        unsafe { sb::C_SkPicture_playback(self.native(), canvas.native_mut()) }
     }
 
     pub fn cull_rect(&self) -> Rect {
@@ -51,8 +53,13 @@ impl RCHandle<SkPicture> {
     }
 
     pub fn approximate_op_count(&self) -> usize {
+        self.approximate_op_count_nested(false)
+    }
+
+    pub fn approximate_op_count_nested(&self, nested: impl Into<Option<bool>>) -> usize {
+        let nested = nested.into().unwrap_or(false);
         unsafe {
-            sb::C_SkPicture_approximateOpCount(self.native())
+            sb::C_SkPicture_approximateOpCount(self.native(), nested)
                 .try_into()
                 .unwrap()
         }

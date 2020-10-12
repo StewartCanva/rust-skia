@@ -1,5 +1,5 @@
-use crate::core::matrix::ApplyPerspectiveClip;
 use crate::interop::DynamicMemoryWStream;
+use crate::matrix::ApplyPerspectiveClip;
 use crate::prelude::*;
 use crate::{
     path_types, scalar, Data, Matrix, PathConvexityType, PathDirection, PathFillType, Point, RRect,
@@ -10,13 +10,13 @@ use skia_bindings::{SkPath, SkPath_Iter, SkPath_RawIter};
 use std::marker::PhantomData;
 use std::mem::forget;
 
-#[deprecated(since = "0.25.0", note = "use path_types::PathDirection")]
+#[deprecated(since = "0.25.0", note = "use PathDirection")]
 pub use path_types::PathDirection as Direction;
 
-#[deprecated(since = "0.25.0", note = "use path_types::PathFillType")]
+#[deprecated(since = "0.25.0", note = "use PathFillType")]
 pub use path_types::PathFillType as FillType;
 
-#[deprecated(since = "0.25.0", note = "use path_types::PathConvexityType")]
+#[deprecated(since = "0.25.0", note = "use PathConvexityType")]
 pub use path_types::PathConvexityType as Convexity;
 
 pub use skia_bindings::SkPath_ArcSize as ArcSize;
@@ -180,6 +180,8 @@ impl Iterator for RawIter<'_> {
 }
 
 pub type Path = Handle<SkPath>;
+unsafe impl Send for Path {}
+unsafe impl Sync for Path {}
 
 impl NativeDrop for SkPath {
     fn drop(&mut self) {
@@ -206,8 +208,99 @@ impl Default for Handle<SkPath> {
 }
 
 impl Handle<SkPath> {
+    pub fn new_from(
+        points: &[Point],
+        verbs: &[u8],
+        conic_weights: &[scalar],
+        fill_type: FillType,
+        is_volatile: impl Into<Option<bool>>,
+    ) -> Self {
+        Self::construct(|path| unsafe {
+            sb::C_SkPath_Make(
+                path,
+                points.native().as_ptr(),
+                points.len().try_into().unwrap(),
+                verbs.as_ptr(),
+                verbs.len().try_into().unwrap(),
+                conic_weights.as_ptr(),
+                conic_weights.len().try_into().unwrap(),
+                fill_type,
+                is_volatile.into().unwrap_or(false),
+            )
+        })
+    }
+
+    pub fn rect(rect: impl AsRef<Rect>, dir: impl Into<Option<PathDirection>>) -> Self {
+        Self::construct(|path| unsafe {
+            sb::C_SkPath_Rect(
+                path,
+                rect.as_ref().native(),
+                dir.into().unwrap_or(PathDirection::CW),
+            )
+        })
+    }
+
+    pub fn oval(oval: impl AsRef<Rect>, dir: impl Into<Option<PathDirection>>) -> Self {
+        Self::construct(|path| unsafe {
+            sb::C_SkPath_Oval(
+                path,
+                oval.as_ref().native(),
+                dir.into().unwrap_or(PathDirection::CW),
+            )
+        })
+    }
+
+    pub fn circle(
+        center: impl Into<Point>,
+        radius: scalar,
+        dir: impl Into<Option<PathDirection>>,
+    ) -> Self {
+        let center = center.into();
+        Self::construct(|path| unsafe {
+            sb::C_SkPath_Circle(
+                path,
+                center.x,
+                center.y,
+                radius,
+                dir.into().unwrap_or(PathDirection::CW),
+            )
+        })
+    }
+
+    pub fn rrect(rect: impl AsRef<RRect>, dir: impl Into<Option<PathDirection>>) -> Self {
+        Self::construct(|path| unsafe {
+            sb::C_SkPath_RRect(
+                path,
+                rect.as_ref().native(),
+                dir.into().unwrap_or(PathDirection::CW),
+            )
+        })
+    }
+
+    pub fn polygon(
+        pts: &[Point],
+        is_closed: bool,
+        fill_type: impl Into<Option<FillType>>,
+        is_volatile: impl Into<Option<bool>>,
+    ) -> Self {
+        Self::construct(|path| unsafe {
+            sb::C_SkPath_Polygon(
+                path,
+                pts.native().as_ptr(),
+                pts.len().try_into().unwrap(),
+                is_closed,
+                fill_type.into().unwrap_or(FillType::Winding),
+                is_volatile.into().unwrap_or(false),
+            )
+        })
+    }
+
+    pub fn line(a: impl Into<Point>, b: impl Into<Point>) -> Self {
+        Self::polygon(&[a.into(), b.into()], false, None, None)
+    }
+
     pub fn new() -> Self {
-        Self::from_native(unsafe { SkPath::new() })
+        Self::construct(|path| unsafe { sb::C_SkPath_Construct(path) })
     }
 
     pub fn is_interpolatable(&self, compare: &Path) -> bool {
@@ -475,20 +568,26 @@ impl Handle<SkPath> {
     pub fn quad_to(&mut self, p1: impl Into<Point>, p2: impl Into<Point>) -> &mut Self {
         let p1 = p1.into();
         let p2 = p2.into();
-        unsafe { self.native_mut().quadTo(p1.x, p1.y, p2.x, p2.y) };
+        unsafe {
+            self.native_mut().quadTo(p1.x, p1.y, p2.x, p2.y);
+        }
         self
     }
 
     pub fn r_quad_to(&mut self, dx1: impl Into<Vector>, dx2: impl Into<Vector>) -> &mut Self {
         let (dx1, dx2) = (dx1.into(), dx2.into());
-        unsafe { self.native_mut().rQuadTo(dx1.x, dx1.y, dx2.x, dx2.y) };
+        unsafe {
+            self.native_mut().rQuadTo(dx1.x, dx1.y, dx2.x, dx2.y);
+        }
         self
     }
 
     pub fn conic_to(&mut self, p1: impl Into<Point>, p2: impl Into<Point>, w: scalar) -> &mut Self {
         let p1 = p1.into();
         let p2 = p2.into();
-        unsafe { self.native_mut().conicTo(p1.x, p1.y, p2.x, p2.y, w) };
+        unsafe {
+            self.native_mut().conicTo(p1.x, p1.y, p2.x, p2.y, w);
+        }
         self
     }
 
@@ -499,7 +598,9 @@ impl Handle<SkPath> {
         w: scalar,
     ) -> &mut Self {
         let (d1, d2) = (d1.into(), d2.into());
-        unsafe { self.native_mut().rConicTo(d1.x, d1.y, d2.x, d2.y, w) };
+        unsafe {
+            self.native_mut().rConicTo(d1.x, d1.y, d2.x, d2.y, w);
+        }
         self
     }
 
@@ -512,8 +613,8 @@ impl Handle<SkPath> {
         let (p1, p2, p3) = (p1.into(), p2.into(), p3.into());
         unsafe {
             self.native_mut()
-                .cubicTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)
-        };
+                .cubicTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+        }
         self
     }
 
@@ -526,8 +627,8 @@ impl Handle<SkPath> {
         let (d1, d2, d3) = (d1.into(), d2.into(), d3.into());
         unsafe {
             self.native_mut()
-                .rCubicTo(d1.x, d1.y, d2.x, d2.y, d3.x, d3.y)
-        };
+                .rCubicTo(d1.x, d1.y, d2.x, d2.y, d3.x, d3.y);
+        }
         self
     }
 
@@ -544,8 +645,8 @@ impl Handle<SkPath> {
                 start_angle,
                 sweep_angle,
                 force_move_to,
-            )
-        };
+            );
+        }
         self
     }
 
@@ -556,7 +657,9 @@ impl Handle<SkPath> {
         radius: scalar,
     ) -> &mut Self {
         let (p1, p2) = (p1.into(), p2.into());
-        unsafe { self.native_mut().arcTo1(p1.x, p1.y, p2.x, p2.y, radius) };
+        unsafe {
+            self.native_mut().arcTo1(p1.x, p1.y, p2.x, p2.y, radius);
+        }
         self
     }
 
@@ -571,8 +674,8 @@ impl Handle<SkPath> {
         let (r, xy) = (r.into(), xy.into());
         unsafe {
             self.native_mut()
-                .arcTo2(r.x, r.y, x_axis_rotate, large_arc, sweep, xy.x, xy.y)
-        };
+                .arcTo2(r.x, r.y, x_axis_rotate, large_arc, sweep, xy.x, xy.y);
+        }
         self
     }
 
@@ -587,8 +690,8 @@ impl Handle<SkPath> {
         let (r, xy) = (r.into(), xy.into());
         unsafe {
             self.native_mut()
-                .rArcTo(r.x, r.y, x_axis_rotate, large_arc, sweep, xy.x, xy.y)
-        };
+                .rArcTo(r.x, r.y, x_axis_rotate, large_arc, sweep, xy.x, xy.y);
+        }
         self
     }
 
@@ -819,6 +922,21 @@ impl Handle<SkPath> {
         unsafe { self.native().getLastPt(last_pt.native_mut()) }.if_true_some(last_pt)
     }
 
+    pub fn make_transform(
+        &mut self,
+        m: &Matrix,
+        pc: impl Into<Option<ApplyPerspectiveClip>>,
+    ) -> Path {
+        self.with_transform_with_perspective_clip(
+            &m,
+            pc.into().unwrap_or(ApplyPerspectiveClip::Yes),
+        )
+    }
+
+    pub fn make_scale(&mut self, (sx, sy): (scalar, scalar)) -> Path {
+        self.make_transform(&Matrix::scale((sx, sy)), ApplyPerspectiveClip::No)
+    }
+
     pub fn set_last_pt(&mut self, p: impl Into<Point>) -> &mut Self {
         let p = p.into();
         unsafe { self.native_mut().setLastPt(p.x, p.y) };
@@ -891,7 +1009,7 @@ fn test_get_points() {
 }
 
 #[test]
-fn fill_type() {
+fn test_fill_type() {
     let mut p = Path::default();
     assert_eq!(p.fill_type(), PathFillType::Winding);
     p.set_fill_type(PathFillType::EvenOdd);
@@ -903,9 +1021,16 @@ fn fill_type() {
 }
 
 #[test]
-fn is_volatile() {
+fn test_is_volatile() {
     let mut p = Path::default();
     assert!(!p.is_volatile());
     p.set_is_volatile(true);
     assert!(p.is_volatile());
+}
+
+#[test]
+fn test_path_rect() {
+    let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+    let path = Path::rect(r, None);
+    assert_eq!(*path.bounds(), r);
 }

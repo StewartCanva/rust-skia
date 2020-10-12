@@ -1,6 +1,8 @@
 #include "bindings.h"
+
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 
 //
 // core/SkSurface.h
@@ -33,8 +35,11 @@ extern "C" SkSurface *C_SkSurface_MakeFromMTKView(GrContext *context,
 // gpu/GrContext.h
 //
 
-extern "C" GrContext* C_GrContext_MakeMetal(void* device, void* queue) {
-    return GrContext::MakeMetal(device, queue).release();
+extern "C" GrDirectContext* C_GrContext_MakeMetal(void* device, void* queue, const GrContextOptions* options) {
+    if (options) {  
+        return GrDirectContext::MakeMetal(device, queue, *options).release();    
+    }
+    return GrDirectContext::MakeMetal(device, queue).release();
 }
 
 //
@@ -60,4 +65,13 @@ extern "C" bool C_GrMtlTextureInfo_Equals(const GrMtlTextureInfo* lhs, const GrM
 
 extern "C" void C_GrBackendFormat_ConstructMtl(GrBackendFormat* uninitialized, GrMTLPixelFormat format) {
     new(uninitialized)GrBackendFormat(GrBackendFormat::MakeMtl(format));
+}
+
+
+extern "C" void C_GrBackendTexture_ConstructMtl(GrBackendTexture* uninitialized, int width, int height, GrMipMapped mipMapped, const GrMtlTextureInfo* mtlInfo) {
+    new(uninitialized)GrBackendTexture(width, height, mipMapped, *mtlInfo);
+}
+
+extern "C" void C_GrBackendRenderTarget_ConstructMtl(GrBackendRenderTarget* uninitialized, int width, int height, int sampleCnt, const GrMtlTextureInfo* mtlInfo) {
+    new(uninitialized)GrBackendRenderTarget(width, height, sampleCnt, *mtlInfo);
 }

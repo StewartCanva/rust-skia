@@ -21,6 +21,12 @@ fn test_surface_backend_handle_access_naming() {
     let _ = BackendHandleAccess::FlushWrite;
 }
 
+pub use skia_bindings::SkSurface_BackendSurfaceAccess as BackendSurfaceAccess;
+#[test]
+fn test_surface_backend_surface_access_naming() {
+    let _ = BackendSurfaceAccess::Present;
+}
+
 pub type Surface = RCHandle<SkSurface>;
 
 impl NativeRefCountedBase for SkSurface {
@@ -53,6 +59,7 @@ impl RCHandle<SkSurface> {
         .map(move |surface| surface.borrows(pixels))
     }
 
+    // TODO: MakeRasterDirect(&Pixmap)
     // TODO: MakeRasterDirectReleaseProc()?
 
     pub fn new_raster(
@@ -121,26 +128,17 @@ impl RCHandle<SkSurface> {
         })
     }
 
+    #[deprecated(since = "0.33.0", note = "removed without replacement")]
     pub fn from_backend_texture_as_render_target(
-        context: &mut gpu::Context,
-        backend_texture: &gpu::BackendTexture,
-        origin: gpu::SurfaceOrigin,
-        sample_count: impl Into<Option<usize>>,
-        color_type: crate::ColorType,
-        color_space: impl Into<Option<crate::ColorSpace>>,
-        surface_props: Option<&SurfaceProps>,
-    ) -> Option<Self> {
-        Self::from_ptr(unsafe {
-            sb::C_SkSurface_MakeFromBackendTextureAsRenderTarget(
-                context.native_mut(),
-                backend_texture.native(),
-                origin,
-                sample_count.into().unwrap_or(0).try_into().unwrap(),
-                color_type.into_native(),
-                color_space.into().into_ptr_or_null(),
-                surface_props.native_ptr_or_null(),
-            )
-        })
+        _context: &mut gpu::Context,
+        _backend_texture: &gpu::BackendTexture,
+        _origin: gpu::SurfaceOrigin,
+        _sample_count: impl Into<Option<usize>>,
+        _color_type: crate::ColorType,
+        _color_space: impl Into<Option<crate::ColorSpace>>,
+        _surface_props: Option<&SurfaceProps>,
+    ) -> ! {
+        panic!("removed without replacement")
     }
 
     #[cfg(feature = "metal")]
@@ -192,11 +190,10 @@ impl RCHandle<SkSurface> {
         })
     }
     pub fn new_render_target(
-        context: &mut gpu::Context,
+        context: &mut gpu::RecordingContext,
         budgeted: crate::Budgeted,
         image_info: &ImageInfo,
         sample_count: impl Into<Option<usize>>,
-        // not optional, because with vulkan, there is no clear default anymore.
         surface_origin: gpu::SurfaceOrigin,
         surface_props: Option<&SurfaceProps>,
         should_create_with_mips: impl Into<Option<bool>>,
@@ -215,7 +212,7 @@ impl RCHandle<SkSurface> {
     }
 
     pub fn new_render_target_with_characterization(
-        context: &mut gpu::Context,
+        context: &mut gpu::RecordingContext,
         characterization: &SurfaceCharacterization,
         budgeted: crate::Budgeted,
     ) -> Option<Self> {
@@ -281,8 +278,16 @@ impl RCHandle<SkSurface> {
 
 #[cfg(feature = "gpu")]
 impl RCHandle<SkSurface> {
+    #[deprecated(
+        since = "0.35.0",
+        note = "Use recordingContext() and RecordingContext::as_direct_context()"
+    )]
     pub fn context(&mut self) -> Option<gpu::Context> {
         gpu::Context::from_unshared_ptr(unsafe { self.native_mut().getContext() })
+    }
+
+    pub fn recording_context(&mut self) -> Option<gpu::RecordingContext> {
+        gpu::RecordingContext::from_unshared_ptr(unsafe { self.native_mut().recordingContext() })
     }
 
     pub fn get_backend_texture(
@@ -377,17 +382,11 @@ impl RCHandle<SkSurface> {
         })
     }
 
-    // TODO: why is self mutable here?
-    pub fn draw(
-        &mut self,
-        mut canvas: impl AsMut<Canvas>,
-        size: impl Into<Size>,
-        paint: Option<&Paint>,
-    ) {
+    pub fn draw(&mut self, canvas: &mut Canvas, size: impl Into<Size>, paint: Option<&Paint>) {
         let size = size.into();
         unsafe {
             self.native_mut().draw(
-                canvas.as_mut().native_mut(),
+                canvas.native_mut(),
                 size.width,
                 size.height,
                 paint.native_ptr_or_null(),
@@ -440,9 +439,9 @@ impl RCHandle<SkSurface> {
         unsafe { self.native_mut().readPixels2(bitmap.native(), src.x, src.y) }
     }
 
-    // TODO: wrap AsyncReadResult (m79)
-    // TODO: wrap asyncRescaleAndReadPixels (m76/m79)
-    // TODO: wrap asyncRescaleAndReadPixelsYUV420 (m77/m79)
+    // TODO: AsyncReadResult, RescaleGamma (m79, m86)
+    // TODO: wrap asyncRescaleAndReadPixels (m76, m79)
+    // TODO: wrap asyncRescaleAndReadPixelsYUV420 (m77, m79)
 
     pub fn write_pixels_from_pixmap(&mut self, src: &Pixmap, dst: impl Into<IPoint>) {
         let dst = dst.into();
@@ -467,13 +466,35 @@ impl RCHandle<SkSurface> {
         }
     }
 
-    #[deprecated(since = "0.30.0", note = "Use flush_and_submit()")]
+    // After deprecated since 0.30.0 (m85), the default flush() behavior changed in m86.
+    // For more information, take a look at the documentation in Skia's SkSurface.h
+    #[cfg(feature = "gpu")]
     pub fn flush(&mut self) {
-        self.flush_and_submit()
+        let info = gpu::FlushInfo::default();
+        self.flush_with_mutable_state(&info, None);
     }
 
-    // TODO: flush(access, FlushInfo)
-    // TODO: flush(access, FlushFlags, semaphores)
+    #[cfg(feature = "gpu")]
+    pub fn flush_with_access_info(
+        &mut self,
+        access: BackendSurfaceAccess,
+        info: &gpu::FlushInfo,
+    ) -> gpu::SemaphoresSubmitted {
+        unsafe { self.native_mut().flush(access, info.native()) }
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn flush_with_mutable_state<'a>(
+        &mut self,
+        info: &gpu::FlushInfo,
+        new_state: impl Into<Option<&'a gpu::BackendSurfaceMutableState>>,
+    ) -> gpu::SemaphoresSubmitted {
+        unsafe {
+            self.native_mut()
+                .flush1(info.native(), new_state.into().native_ptr_or_null())
+        }
+    }
+
     // TODO: wait()
 
     pub fn characterize(&self) -> Option<SurfaceCharacterization> {
@@ -481,8 +502,16 @@ impl RCHandle<SkSurface> {
         unsafe { self.native().characterize(sc.native_mut()) }.if_true_some(sc)
     }
 
-    pub fn draw_display_list(&mut self, deferred_display_list: &mut DeferredDisplayList) -> bool {
-        unsafe { self.native_mut().draw1(deferred_display_list.native_mut()) }
+    pub fn draw_display_list(
+        &mut self,
+        deferred_display_list: impl Into<DeferredDisplayList>,
+    ) -> bool {
+        unsafe {
+            sb::C_SkSurface_draw(
+                self.native_mut(),
+                deferred_display_list.into().into_ptr() as *const _,
+            )
+        }
     }
 }
 
@@ -512,4 +541,26 @@ fn test_raster_direct() {
     .unwrap();
     let paint = Paint::default();
     surface.canvas().draw_circle((10, 10), 10.0, &paint);
+}
+
+#[test]
+fn test_drawing_owned_as_exclusive_ref_ergonomics() {
+    let mut surface = Surface::new_raster_n32_premul((16, 16)).unwrap();
+
+    // option1:
+    // - An &mut canvas can be drawn to.
+    {
+        let mut canvas = Canvas::new(ISize::new(16, 16), None).unwrap();
+        surface.draw(&mut canvas, (5.0, 5.0), None);
+        surface.draw(&mut canvas, (10.0, 10.0), None);
+    }
+
+    // option2:
+    // - A canvas from another surface can be drawn to.
+    {
+        let mut surface2 = Surface::new_raster_n32_premul((16, 16)).unwrap();
+        let canvas = surface2.canvas();
+        surface.draw(canvas, (5.0, 5.0), None);
+        surface.draw(canvas, (10.0, 10.0), None);
+    }
 }

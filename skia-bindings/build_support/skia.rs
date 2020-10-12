@@ -20,18 +20,16 @@ mod feature_id {
     pub const GL: &str = "gl";
     pub const VULKAN: &str = "vulkan";
     pub const METAL: &str = "metal";
+    pub const D3D: &str = "d3d";
     pub const TEXTLAYOUT: &str = "textlayout";
+    pub const WEBPE: &str = "webpe";
+    pub const WEBPD: &str = "webpd";
 }
 
 /// The defaults for the Skia build configuration.
 impl Default for BuildConfiguration {
     fn default() -> Self {
-        let skia_debug = {
-            match cargo::env_var("SKIA_DEBUG") {
-                Some(v) if v != "0" => true,
-                _ => false,
-            }
-        };
+        let skia_debug = matches!(cargo::env_var("SKIA_DEBUG"), Some(v) if v != "0");
 
         BuildConfiguration {
             on_windows: cargo::host().is_windows(),
@@ -40,7 +38,10 @@ impl Default for BuildConfiguration {
                 gl: cfg!(feature = "gl"),
                 vulkan: cfg!(feature = "vulkan"),
                 metal: cfg!(feature = "metal"),
+                d3d: cfg!(feature = "d3d"),
                 text_layout: cfg!(feature = "textlayout"),
+                webp_encode: cfg!(feature = "webp-encode"),
+                webp_decode: cfg!(feature = "webp-decode"),
                 animation: false,
                 dng: false,
                 particles: false,
@@ -77,8 +78,17 @@ pub struct Features {
     /// Build with Metal support?
     pub metal: bool,
 
+    /// Build with Direct3D support?
+    pub d3d: bool,
+
     /// Features related to text layout. Modules skshaper and skparagraph.
     pub text_layout: bool,
+
+    /// Support the encoding of bitmap data to the WEBP image format.
+    pub webp_encode: bool,
+
+    /// Support the decoding of the WEBP image format to bitmap data.
+    pub webp_decode: bool,
 
     /// Build with animation support (yet unsupported, no wrappers).
     pub animation: bool,
@@ -92,7 +102,7 @@ pub struct Features {
 
 impl Features {
     pub fn gpu(&self) -> bool {
-        self.gl || self.vulkan || self.metal
+        self.gl || self.vulkan || self.metal || self.d3d
     }
 
     /// Feature Ids used to look up prebuilt binaries.
@@ -108,8 +118,17 @@ impl Features {
         if self.metal {
             feature_ids.push(feature_id::METAL);
         }
+        if self.d3d {
+            feature_ids.push(feature_id::D3D);
+        }
         if self.text_layout {
             feature_ids.push(feature_id::TEXTLAYOUT);
+        }
+        if self.webp_encode {
+            feature_ids.push(feature_id::WEBPE);
+        }
+        if self.webp_decode {
+            feature_ids.push(feature_id::WEBPD);
         }
 
         feature_ids
@@ -150,22 +169,19 @@ impl FinalBuildConfiguration {
             }
 
             let mut args: Vec<(&str, String)> = vec![
-                (
-                    "is_official_build",
-                    if build.skia_debug { no() } else { yes() },
-                ),
-                ("is_debug", if build.skia_debug { yes() } else { no() }),
-                ("skia_enable_gpu", if features.gpu() { yes() } else { no() }),
-                ("skia_use_gl", if features.gl { yes() } else { no() }),
+                ("is_official_build", yes_if(!build.skia_debug)),
+                ("is_debug", yes_if(build.skia_debug)),
+                ("skia_enable_gpu", yes_if(features.gpu())),
+                ("skia_use_gl", yes_if(features.gl)),
                 ("skia_use_system_libjpeg_turbo", no()),
                 ("skia_use_system_libpng", no()),
-                ("skia_use_libwebp_encode", no()),
-                ("skia_use_libwebp_decode", no()),
+                ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
+                ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
                 ("skia_use_system_zlib", no()),
                 ("skia_use_freetype", yes()),
                 ("skia_use_fonthost_mac", no()),
                 ("skia_use_xps", no()),
-                ("skia_use_dng_sdk", if features.dng { yes() } else { no() }),
+                ("skia_use_dng_sdk", yes_if(features.dng)),
                 ("cc", quote("clang")),
                 ("cxx", quote("clang++")),
             ];
@@ -179,9 +195,12 @@ impl FinalBuildConfiguration {
                 args.push(("skia_use_metal", yes()));
             }
 
+            if features.d3d {
+                args.push(("skia_use_direct3d", yes()))
+            }
+
             // further flags that limit the components of Skia debug builds.
             if build.skia_debug {
-                args.push(("skia_enable_atlas_text", no()));
                 args.push(("skia_enable_spirv_validation", no()));
                 args.push(("skia_enable_tools", no()));
                 args.push(("skia_enable_vulkan_debug_layers", no()));
@@ -205,6 +224,10 @@ impl FinalBuildConfiguration {
                 ]);
             } else {
                 args.push(("skia_use_icu", no()));
+            }
+
+            if features.webp_encode || features.webp_decode {
+                args.push(("skia_use_system_libwebp", no()))
             }
 
             let mut flags: Vec<&str> = vec![];
@@ -305,6 +328,9 @@ impl FinalBuildConfiguration {
             if features.metal {
                 sources.push("src/metal.cpp".into());
             }
+            if features.d3d {
+                sources.push("src/d3d.cpp".into());
+            }
             if features.gpu() {
                 sources.push("src/gpu.cpp".into());
             }
@@ -330,6 +356,13 @@ fn yes() -> String {
 }
 fn no() -> String {
     "false".into()
+}
+fn yes_if(y: bool) -> String {
+    if y {
+        yes()
+    } else {
+        no()
+    }
 }
 
 /// The configuration of the resulting binaries.
@@ -395,9 +428,12 @@ impl BinariesConfiguration {
                 }
             }
             (_, _, "windows", Some("msvc")) => {
-                link_libraries.extend(vec!["usp10", "ole32", "user32", "gdi32", "fontsub"]);
+                link_libraries.extend(&["usp10", "ole32", "user32", "gdi32", "fontsub"]);
                 if features.gl {
                     link_libraries.push("opengl32");
+                }
+                if features.d3d {
+                    link_libraries.extend(&["d3d12", "dxgi", "d3dcompiler"]);
                 }
             }
             (_, "linux", "android", _) | (_, "linux", "androideabi", _) => {
@@ -434,10 +470,7 @@ impl BinariesConfiguration {
     /// Inform cargo that the library files of the given configuration are available and
     /// can be used as dependencies.
     pub fn commit_to_cargo(&self) {
-        println!(
-            "cargo:rustc-link-search={}",
-            self.output_directory.to_str().unwrap()
-        );
+        cargo::add_link_search(self.output_directory.to_str().unwrap());
 
         // On Linux, the order is significant, first the static libraries we built, and then
         // the system libraries.
@@ -594,12 +627,11 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         .default_enum_style(EnumVariation::Rust {
             non_exhaustive: false,
         })
+        .size_t_is_usize(true)
         .parse_callbacks(Box::new(ParseCallbacks))
         .raw_line("#![allow(clippy::all)]")
         // GrVkBackendContext contains u128 fields on macOS
         .raw_line("#![allow(improper_ctypes)]")
-        .size_t_is_usize(true)
-        .parse_callbacks(Box::new(ParseCallbacks))
         .whitelist_function("C_.*")
         .constified_enum(".*Mask")
         .constified_enum(".*Flags")
@@ -623,8 +655,6 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         .blacklist_type("GrContextThreadSafeProxy")
         .raw_line("pub enum GrContextThreadSafeProxyPriv {}")
         .blacklist_type("GrContextThreadSafeProxyPriv")
-        .raw_line("pub enum GrRecordingContext {}")
-        .blacklist_type("GrRecordingContext")
         .raw_line("pub enum GrRecordingContextPriv {}")
         .blacklist_type("GrRecordingContextPriv")
         .raw_line("pub enum GrContextPriv {}")
@@ -693,6 +723,12 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
 
         definitions::combine(definitions, build.definitions.clone())
     };
+
+    // Whether GIF decoding is supported,
+    // is decided by BUILD.gn based on the existence of the libgifcodec directory:
+    if !definitions.iter().any(|(v, _)| v == "SK_USE_LIBGIFCODEC") {
+        cargo::warning("GIF decoding support may be missing, does the directory skia/third_party/externals/libgifcodec/ exist?")
+    }
 
     for (name, value) in &definitions {
         match value {
@@ -886,6 +922,9 @@ const OPAQUE_TYPES: &[&str] = &[
     "SkMutex",
     // m82: private
     "SkIDChangeListener",
+    // m86:
+    "GrRecordingContext",
+    "GrDirectContext",
 ];
 
 const BLACKLISTED_TYPES: &[&str] = &[
@@ -931,6 +970,12 @@ impl bindgen::callbacks::ParseCallbacks for ParseCallbacks {
 type EnumEntry = (&'static str, fn(&str, &str) -> String);
 
 const ENUM_TABLE: &[EnumEntry] = &[
+    //
+    // codec/
+    //
+    ("DocumentStructureType", rewrite::k_xxx),
+    ("ZeroInitialized", rewrite::k_xxx_name),
+    ("SelectionPolicy", rewrite::k_xxx),
     //
     // core/ effects/
     //
@@ -987,6 +1032,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("CompressionType", rewrite::k_xxx),
     // SkImageFilter_MapDirection
     ("MapDirection", rewrite::k_xxx_name),
+    // SkCodec_Result
     // SkInterpolatorBase_Result
     ("Result", rewrite::k_xxx),
     // SkMatrix_ScaleToFit
@@ -1028,7 +1074,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("GrGLFormat", rewrite::k_xxx),
     ("GrSurfaceOrigin", rewrite::k_xxx_name),
     ("GrBackendApi", rewrite::k_xxx),
-    ("GrMipMapped", rewrite::k_xxx),
+    ("GrMipmapped", rewrite::k_xxx),
     ("GrRenderable", rewrite::k_xxx),
     ("GrProtected", rewrite::k_xxx),
     //
@@ -1063,6 +1109,15 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("Verb", rewrite::k_xxx_name),
     // m84: SkVertices::Attribute::Usage
     ("Usage", rewrite::k_xxx),
+    ("GrSemaphoresSubmitted", rewrite::k_xxx),
+    ("BackendSurfaceAccess", rewrite::k_xxx),
+    // m85
+    ("VkSharingMode", rewrite::vk),
+    // m86:
+    ("SkSamplingMode", rewrite::k_xxx),
+    ("SkMipmapMode", rewrite::k_xxx),
+    ("Enable", rewrite::k_xxx),
+    ("ShaderCacheStrategy", rewrite::k_xxx),
 ];
 
 pub(crate) mod rewrite {
@@ -1074,8 +1129,8 @@ pub(crate) mod rewrite {
     }
 
     pub fn k_xxx(name: &str, variant: &str) -> String {
-        if variant.starts_with('k') {
-            variant[1..].into()
+        if let Some(stripped) = variant.strip_prefix('k') {
+            stripped.into()
         } else {
             panic!(
                 "Variant name '{}' of enum type '{}' is expected to start with a 'k'",
@@ -1269,10 +1324,8 @@ mod prerequisites {
         // infra/ contains very long filenames which may hit the max path restriction on Windows.
         // https://github.com/rust-skia/rust-skia/issues/169
         fn filter_skia(p: &Path) -> bool {
-            match p.components().next() {
-                Some(Component::Normal(name)) if name == OsStr::new("infra") => false,
-                _ => true,
-            }
+            !matches!(p.components().next(),
+                Some(Component::Normal(name)) if name == OsStr::new("infra"))
         }
 
         // we need only ninja from depot_tools.
@@ -1309,8 +1362,8 @@ pub(crate) mod definitions {
             defines
                 .split_whitespace()
                 .map(|d| {
-                    if d.starts_with(prefix) {
-                        &d[prefix.len()..]
+                    if let Some(stripped) = d.strip_prefix(prefix) {
+                        stripped
                     } else {
                         panic!("missing '-D' prefix from a definition")
                     }

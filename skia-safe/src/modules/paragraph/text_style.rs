@@ -72,6 +72,8 @@ fn placeholder_alignment_member_naming() {
 }
 
 pub type FontFeature = Handle<sb::skia_textlayout_FontFeature>;
+unsafe impl Send for FontFeature {}
+unsafe impl Sync for FontFeature {}
 
 impl NativeDrop for sb::skia_textlayout_FontFeature {
     fn drop(&mut self) {
@@ -101,7 +103,7 @@ impl Handle<sb::skia_textlayout_FontFeature> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PlaceholderStyle {
     pub width: scalar,
     pub height: scalar,
@@ -119,18 +121,6 @@ fn placeholder_style_layout() {
 impl PartialEq for PlaceholderStyle {
     fn eq(&self, other: &Self) -> bool {
         unsafe { self.native().equals(other.native()) }
-    }
-}
-
-impl Default for PlaceholderStyle {
-    fn default() -> Self {
-        Self::new(
-            0.0,
-            0.0,
-            PlaceholderAlignment::Baseline,
-            TextBaseline::Alphabetic,
-            0.0,
-        )
     }
 }
 
@@ -153,6 +143,8 @@ impl PlaceholderStyle {
 }
 
 pub type TextStyle = Handle<sb::skia_textlayout_TextStyle>;
+unsafe impl Send for TextStyle {}
+unsafe impl Sync for TextStyle {}
 
 impl NativeDrop for sb::skia_textlayout_TextStyle {
     fn drop(&mut self) {
@@ -180,11 +172,11 @@ impl Default for Handle<sb::skia_textlayout_TextStyle> {
 
 impl Handle<sb::skia_textlayout_TextStyle> {
     pub fn new() -> Self {
-        TextStyle::from_native(unsafe { sb::skia_textlayout_TextStyle::new() })
+        TextStyle::construct(|ts| unsafe { sb::C_TextStyle_Construct(ts) })
     }
 
     pub fn to_placeholder(&self) -> Self {
-        TextStyle::from_native(unsafe { sb::skia_textlayout_TextStyle::new1(self.native(), true) })
+        TextStyle::from_native(unsafe { sb::skia_textlayout_TextStyle::new(self.native(), true) })
     }
 
     pub fn equals(&self, other: &TextStyle) -> bool {
