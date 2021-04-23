@@ -1,3 +1,5 @@
+#![allow(clippy::clippy::upper_case_acronyms)]
+
 pub mod codec;
 #[deprecated(since = "0.33.1", note = "use codec::Result")]
 pub use codec::Result as CodecResult;
@@ -25,7 +27,7 @@ extern crate bitflags;
 extern crate lazy_static;
 
 // Prelude re-exports
-pub use crate::prelude::{Borrows, ConditionallySend, Sendable};
+pub use crate::prelude::{Borrows, ConditionallySend, Handle, RCHandle, RefHandle, Sendable};
 
 /// All Sk* types are accessible via skia_safe::
 pub use crate::core::*;

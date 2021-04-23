@@ -50,10 +50,10 @@ impl RCHandle<SkContourMeasure> {
             self.native().getMatrix(
                 distance,
                 m.native_mut(),
-                // note: depending on the OS, different representation types are generated for MatrixFlags,
-                // so the try_into() is required, even though clippy complains about it.
-                #[allow(clippy::unknown_clippy_lints)]
-                #[allow(clippy::useless_conversion)] // 1.45 lint
+                // note: depending on the OS, different representation types are generated for
+                // MatrixFlags, so the try_into() is required, even though clippy complains about
+                // it.
+                #[allow(clippy::useless_conversion)]
                 flags.into().unwrap_or_default().bits().try_into().unwrap(),
             )
         }
@@ -112,7 +112,7 @@ impl Handle<SkContourMeasureIter> {
         force_closed: bool,
         res_scale: impl Into<Option<scalar>>,
     ) -> Self {
-        Self::from_native(unsafe {
+        Self::from_native_c(unsafe {
             SkContourMeasureIter::new1(path.native(), force_closed, res_scale.into().unwrap_or(1.0))
         })
     }

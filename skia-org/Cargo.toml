@@ -18,6 +18,9 @@ edition = "2018"
 [features]
 default = []
 gl = ["offscreen_gl_context", "sparkle", "skia-safe/gl"]
+egl = ["gl", "skia-safe/egl"]
+x11 = ["gl", "skia-safe/x11"]
+wayland = ["egl", "skia-safe/wayland"]
 vulkan = ["ash", "skia-safe/vulkan"]
 metal = ["metal-rs", "foreign-types", "cocoa", "objc", "skia-safe/metal"]
 d3d = ["skia-safe/d3d", "winapi", "wio"]
@@ -35,7 +38,7 @@ offscreen_gl_context = { git = "https://github.com/rust-skia/rust-offscreen-rend
 # sparkle 0.1.25 is incompatible with offscreen_gl_context
 sparkle = { version = "=0.1.24", optional = true }
 clap = "2.33.0"
-ash = { version = "0.31", optional = true }
+ash = { version = "0.32", optional = true }
 # need to rename the package because of the feature with the same name.
 metal-rs = { package = "metal", version = "0.17.1", optional = true }
 # ... to access raw metal ptrs.

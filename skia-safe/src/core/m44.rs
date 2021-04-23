@@ -3,10 +3,12 @@ use crate::prelude::*;
 use crate::{scalar, Matrix, Matrix44, Scalars};
 use bitflags::_core::ops::{AddAssign, MulAssign};
 use skia_bindings as sb;
-use skia_bindings::{Sk3LookAt, Sk3Perspective, SkM44, SkV2, SkV3, SkV4};
-use std::f32;
-use std::ops::{Add, Mul, Neg, Sub, SubAssign};
-use std::slice;
+use skia_bindings::{SkM44, SkV2, SkV3, SkV4};
+use std::{
+    f32,
+    ops::{Add, Div, DivAssign, Index, Mul, Neg, Sub, SubAssign},
+    slice,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Default, Debug)]
@@ -110,6 +112,13 @@ impl Mul<V2> for scalar {
     }
 }
 
+impl Div<scalar> for V2 {
+    type Output = V2;
+    fn div(self, s: scalar) -> Self::Output {
+        V2::new(self.x / s, self.y / s)
+    }
+}
+
 impl AddAssign for V2 {
     fn add_assign(&mut self, v: Self) {
         *self = *self + v
@@ -131,6 +140,12 @@ impl MulAssign for V2 {
 impl MulAssign<scalar> for V2 {
     fn mul_assign(&mut self, s: scalar) {
         *self = *self * s
+    }
+}
+
+impl DivAssign<scalar> for V2 {
+    fn div_assign(&mut self, s: scalar) {
+        *self = *self / s
     }
 }
 
@@ -373,6 +388,14 @@ impl MulAssign<scalar> for V4 {
     }
 }
 
+impl Index<usize> for V4 {
+    type Output = f32;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.as_array()[index]
+    }
+}
+
 #[repr(C)]
 #[derive(Clone)]
 pub struct M44 {
@@ -388,25 +411,25 @@ fn test_m44_layout() {
 
 impl Default for M44 {
     fn default() -> Self {
-        Self {
-            mat: [
-                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-            ],
-        }
+        Self::new_identity()
     }
 }
 
 impl PartialEq for M44 {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { sb::C_M44_equals(self.native(), other.native()) }
+        unsafe { sb::C_SkM44_equals(self.native(), other.native()) }
     }
 }
 
 impl M44 {
     const COMPONENTS: usize = 16;
 
-    pub fn new_identity() -> Self {
-        Self::default()
+    pub const fn new_identity() -> Self {
+        Self {
+            mat: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        }
     }
 
     pub fn concat(a: &Self, b: &Self) -> Self {
@@ -415,29 +438,29 @@ impl M44 {
         m
     }
 
-    pub fn nan() -> Self {
+    pub const fn nan() -> Self {
         Self {
             mat: [f32::NAN; Self::COMPONENTS],
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         m0: scalar,
-        m1: scalar,
-        m2: scalar,
-        m3: scalar,
         m4: scalar,
-        m5: scalar,
-        m6: scalar,
-        m7: scalar,
         m8: scalar,
-        m9: scalar,
-        m10: scalar,
-        m11: scalar,
         m12: scalar,
+        m1: scalar,
+        m5: scalar,
+        m9: scalar,
         m13: scalar,
+        m2: scalar,
+        m6: scalar,
+        m10: scalar,
         m14: scalar,
+        m3: scalar,
+        m7: scalar,
+        m11: scalar,
         m15: scalar,
     ) -> Self {
         Self {
@@ -687,7 +710,7 @@ impl M44 {
 
     #[warn(unused)]
     pub fn transpose(&self) -> M44 {
-        Self::from_native(unsafe { self.native().transpose() })
+        Self::construct(|m| unsafe { sb::C_SkM44_transpose(self.native(), m) })
     }
 
     pub fn dump(&self) {
@@ -695,7 +718,7 @@ impl M44 {
     }
 
     pub fn map(&self, x: f32, y: f32, z: f32, w: f32) -> V4 {
-        V4::from_native(unsafe { self.native().map(x, y, z, w) })
+        V4::from_native_c(unsafe { sb::C_SkM44_map(self.native(), x, y, z, w) })
     }
 
     pub fn to_m33(&self) -> Matrix {
@@ -735,11 +758,13 @@ impl M44 {
     }
 
     pub fn look_at(eye: &V3, center: &V3, up: &V3) -> Self {
-        Self::from_native(unsafe { Sk3LookAt(eye.native(), center.native(), up.native()) })
+        Self::construct(|m| unsafe {
+            sb::C_Sk3LookAt(eye.native(), center.native(), up.native(), m)
+        })
     }
 
     pub fn perspective(near: f32, far: f32, angle: f32) -> Self {
-        Self::from_native(unsafe { Sk3Perspective(near, far, angle) })
+        Self::construct(|m| unsafe { sb::C_Sk3Perspective(near, far, angle, m) })
     }
 
     // helper
@@ -814,5 +839,22 @@ impl From<&Matrix44> for M44 {
         let mut rm: [f32; 16] = Default::default();
         m.as_col_major(&mut rm);
         M44::col_major(&rm)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{matrix, Matrix, Rect, M44};
+
+    #[test]
+    pub fn convert_from_matrix_and_back() {
+        // taken from skulpin's physics example.
+        let vr = Rect::new(-4.5, -4.0, 4.5, 2.0);
+        let dst = Rect::new(0.0, 0.0, 1350.0, 900.0);
+
+        let m = Matrix::from_rect_to_rect(vr, dst, matrix::ScaleToFit::Center).unwrap();
+        let m44 = M44::from(m);
+        let m3 = m44.to_m33();
+        assert_eq!(m, m3);
     }
 }

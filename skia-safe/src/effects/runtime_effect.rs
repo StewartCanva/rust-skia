@@ -1,59 +1,56 @@
-use crate::interop::AsStr;
-use crate::prelude::*;
-use crate::{interop, ColorFilter, Data, Matrix, Shader};
+use crate::{
+    interop::{self, AsStr},
+    prelude::*,
+    ColorFilter, Data, Matrix, Shader,
+};
+use sb::SkRuntimeEffect_Options;
 use skia_bindings as sb;
 use skia_bindings::{
-    SkRefCntBase, SkRuntimeEffect, SkRuntimeEffect_Variable, SkRuntimeEffect_Varying,
+    SkRefCntBase, SkRuntimeEffect, SkRuntimeEffect_Uniform, SkRuntimeEffect_Varying,
 };
 use std::ffi::CStr;
-use std::slice;
 
-pub type Variable = Handle<SkRuntimeEffect_Variable>;
-unsafe impl Send for Variable {}
-unsafe impl Sync for Variable {}
+pub type Uniform = Handle<SkRuntimeEffect_Uniform>;
 
-impl NativeDrop for SkRuntimeEffect_Variable {
+#[deprecated(since = "0.35.0", note = "Use Uniform instead")]
+pub type Variable = Uniform;
+
+unsafe impl Send for Uniform {}
+unsafe impl Sync for Uniform {}
+
+impl NativeDrop for SkRuntimeEffect_Uniform {
     fn drop(&mut self) {
-        panic!("native type SkRuntimeEffect::Variable can't be owned by Rust");
+        panic!("native type SkRuntimeEffect::Uniform can't be owned by Rust");
     }
 }
 
-impl Handle<SkRuntimeEffect_Variable> {
+impl Uniform {
     pub fn name(&self) -> &str {
-        self.native().fName.as_str()
+        self.native().name.as_str()
     }
 
     pub fn offset(&self) -> usize {
-        self.native().fOffset
+        self.native().offset
     }
 
-    pub fn qualifier(&self) -> variable::Qualifier {
-        self.native().fQualifier
-    }
-
-    pub fn ty(&self) -> variable::Type {
-        self.native().fType
+    pub fn ty(&self) -> uniform::Type {
+        self.native().type_
     }
 
     pub fn count(&self) -> i32 {
-        self.native().fCount
+        self.native().count
     }
 
-    pub fn flags(&self) -> variable::Flags {
-        variable::Flags::from_bits(self.native().fFlags).unwrap()
+    pub fn flags(&self) -> uniform::Flags {
+        uniform::Flags::from_bits(self.native().flags).unwrap()
     }
 
     pub fn marker(&self) -> u32 {
-        self.native().fMarker
-    }
-
-    #[cfg(feature = "gpu")]
-    pub fn gpu_type(&self) -> crate::private::gpu::SLType {
-        self.native().fGPUType
+        self.native().marker
     }
 
     pub fn is_array(&self) -> bool {
-        self.flags().contains(variable::Flags::ARRAY)
+        self.flags().contains(uniform::Flags::ARRAY)
     }
 
     pub fn size_in_bytes(&self) -> usize {
@@ -61,27 +58,21 @@ impl Handle<SkRuntimeEffect_Variable> {
     }
 }
 
-pub mod variable {
+pub mod uniform {
     use skia_bindings as sb;
 
-    pub use sb::SkRuntimeEffect_Variable_Qualifier as Qualifier;
-    #[test]
-    fn test_qualifier_naming() {
-        let _ = Qualifier::In;
-    }
-
-    pub use sb::SkRuntimeEffect_Variable_Type as Type;
+    pub use sb::SkRuntimeEffect_Uniform_Type as Type;
     #[test]
     fn test_type_naming() {
-        let _ = Type::Bool;
+        let _ = Type::Float2x2;
     }
 
     bitflags! {
         pub struct Flags : u32 {
-            const ARRAY = sb::SkRuntimeEffect_Variable_Flags_kArray_Flag as _;
-            const MARKER = sb::SkRuntimeEffect_Variable_Flags_kMarker_Flag as _;
-            const MARKER_NORMALS = sb::SkRuntimeEffect_Variable_Flags_kMarkerNormals_Flag as _;
-            const SRGB_UNPREMUL = sb::SkRuntimeEffect_Variable_Flags_kSRGBUnpremul_Flag as _;
+            const ARRAY = sb::SkRuntimeEffect_Uniform_Flags_kArray_Flag as _;
+            const MARKER = sb::SkRuntimeEffect_Uniform_Flags_kMarker_Flag as _;
+            const MARKER_NORMALS = sb::SkRuntimeEffect_Uniform_Flags_kMarkerNormals_Flag as _;
+            const SRGB_UNPREMUL = sb::SkRuntimeEffect_Uniform_Flags_kSRGBUnpremul_Flag as _;
         }
     }
 }
@@ -96,13 +87,13 @@ impl NativeDrop for SkRuntimeEffect_Varying {
     }
 }
 
-impl Handle<SkRuntimeEffect_Varying> {
+impl Varying {
     pub fn name(&self) -> &str {
-        self.native().fName.as_str()
+        self.native().name.as_str()
     }
 
     pub fn width(&self) -> i32 {
-        self.native().fWidth
+        self.native().width
     }
 }
 
@@ -112,22 +103,34 @@ impl NativeRefCountedBase for SkRuntimeEffect {
     type Base = SkRefCntBase;
 }
 
-pub fn new(sksl: impl AsRef<str>) -> Result<RuntimeEffect, String> {
-    let str = interop::String::from_str(sksl);
-    let mut error = interop::String::default();
-    let effect = RuntimeEffect::from_ptr(unsafe {
-        sb::C_SkRuntimeEffect_Make(str.native(), error.native_mut())
-    });
-    match effect {
-        Some(runtime_effect) => Ok(runtime_effect),
-        None => Err(error.as_str().to_owned()),
-    }
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub struct Options {
+    pub inline_threshold: i32,
 }
 
-impl RCHandle<SkRuntimeEffect> {
+impl NativeTransmutable<SkRuntimeEffect_Options> for Options {}
+
+pub fn new(sksl: impl AsRef<str>) -> Result<RuntimeEffect, String> {
+    new_with_options(sksl, None)
+}
+
+pub fn new_with_options<'a>(
+    sksl: impl AsRef<str>,
+    options: impl Into<Option<&'a Options>>,
+) -> Result<RuntimeEffect, String> {
+    let str = interop::String::from_str(sksl);
+    let options = options.into().copied().unwrap_or_default();
+    let mut error = interop::String::default();
+    RuntimeEffect::from_ptr(unsafe {
+        sb::C_SkRuntimeEffect_Make(str.native(), options.native(), error.native_mut())
+    })
+    .ok_or_else(|| error.as_str().to_owned())
+}
+
+impl RuntimeEffect {
     pub fn make_shader<'a>(
         &mut self,
-        inputs: impl Into<Data>,
+        uniforms: impl Into<Data>,
         children: impl IntoIterator<Item = Shader>,
         local_matrix: impl Into<Option<&'a Matrix>>,
         is_opaque: bool,
@@ -139,11 +142,40 @@ impl RCHandle<SkRuntimeEffect> {
         Shader::from_ptr(unsafe {
             sb::C_SkRuntimeEffect_makeShader(
                 self.native_mut(),
-                inputs.into().into_ptr(),
+                uniforms.into().into_ptr(),
                 children.as_mut_ptr(),
                 children.len(),
                 local_matrix.into().native_ptr_or_null(),
                 is_opaque,
+            )
+        })
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn make_image<'a>(
+        &mut self,
+        context: &mut crate::gpu::RecordingContext,
+        uniforms: impl Into<Data>,
+        children: impl IntoIterator<Item = Shader>,
+        local_matrix: impl Into<Option<&'a Matrix>>,
+        result_info: crate::ImageInfo,
+        mipmapped: bool,
+    ) -> Option<crate::Image> {
+        let mut children: Vec<_> = children
+            .into_iter()
+            .map(|shader| shader.into_ptr())
+            .collect();
+
+        crate::Image::from_ptr(unsafe {
+            sb::C_SkRuntimeEffect_makeImage(
+                self.native_mut(),
+                context.native_mut(),
+                uniforms.into().into_ptr(),
+                children.as_mut_ptr(),
+                children.len(),
+                local_matrix.into().native_ptr_or_null(),
+                result_info.native(),
+                mipmapped,
             )
         })
     }
@@ -172,24 +204,25 @@ impl RCHandle<SkRuntimeEffect> {
         unimplemented!("removed without replacement")
     }
 
-    pub fn hash(&self) -> u32 {
-        unsafe { sb::C_SkRuntimeEffect_hash(self.native()) }
-    }
-
+    #[deprecated(since = "0.35.0", note = "Use uniform_size() instead")]
     pub fn input_size(&self) -> usize {
-        unsafe { self.native().inputSize() }
+        self.uniform_size()
     }
 
-    #[deprecated(since = "0.30.0", note = "removed without replacement")]
-    pub fn uniform_size(&self) -> ! {
-        panic!("removed without replacement")
+    pub fn uniform_size(&self) -> usize {
+        unsafe { self.native().uniformSize() }
     }
 
-    pub fn inputs(&self) -> &[Variable] {
+    #[deprecated(since = "0.35.0", note = "Use uniforms() instead")]
+    pub fn inputs(&self) -> &[Uniform] {
+        self.uniforms()
+    }
+
+    pub fn uniforms(&self) -> &[Uniform] {
         unsafe {
             let mut count: usize = 0;
-            let ptr = sb::C_SkRuntimeEffect_inputs(self.native(), &mut count);
-            slice::from_raw_parts(Variable::from_native_ref(&*ptr), count)
+            let ptr = sb::C_SkRuntimeEffect_uniforms(self.native(), &mut count);
+            safer::from_raw_parts(Uniform::from_native_ptr(ptr), count)
         }
     }
 
@@ -197,7 +230,7 @@ impl RCHandle<SkRuntimeEffect> {
         unsafe {
             let mut count: usize = 0;
             let ptr = sb::C_SkRuntimeEffect_children(self.native(), &mut count);
-            let slice = slice::from_raw_parts(ptr, count);
+            let slice = safer::from_raw_parts(ptr, count);
             slice.iter().map(|str| str.as_str())
         }
     }
@@ -206,14 +239,19 @@ impl RCHandle<SkRuntimeEffect> {
         unsafe {
             let mut count: usize = 0;
             let ptr = sb::C_SkRuntimeEffect_varyings(self.native(), &mut count);
-            slice::from_raw_parts(Varying::from_native_ref(&*ptr), count)
+            safer::from_raw_parts(Varying::from_native_ptr(ptr), count)
         }
     }
 
-    pub fn find_input(&self, name: impl AsRef<CStr>) -> Option<&Variable> {
-        unsafe { self.native().findInput(name.as_ref().as_ptr()) }
+    #[deprecated(since = "0.35.0", note = "Use find_uniform()")]
+    pub fn find_input(&self, name: impl AsRef<CStr>) -> Option<&Uniform> {
+        self.find_uniform(name)
+    }
+
+    pub fn find_uniform(&self, name: impl AsRef<CStr>) -> Option<&Uniform> {
+        unsafe { self.native().findUniform(name.as_ref().as_ptr()) }
             .into_option()
-            .map(|ptr| Variable::from_native_ref(unsafe { &*ptr }))
+            .map(|ptr| Uniform::from_native_ref(unsafe { &*ptr }))
     }
 
     pub fn find_child(&self, name: impl AsRef<CStr>) -> Option<usize> {
@@ -227,3 +265,13 @@ impl RCHandle<SkRuntimeEffect> {
 }
 
 // TODO: wrap SkRuntimeShaderBuilder
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::NativeTransmutable;
+
+    #[test]
+    fn options_layout() {
+        super::Options::test_layout()
+    }
+}

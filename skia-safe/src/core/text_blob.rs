@@ -145,9 +145,9 @@ impl NativeDrop for SkTextBlobBuilder {
     }
 }
 
-impl Handle<SkTextBlobBuilder> {
+impl TextBlobBuilder {
     pub fn new() -> Self {
-        Self::from_native(unsafe { SkTextBlobBuilder::new() })
+        Self::from_native_c(unsafe { SkTextBlobBuilder::new() })
     }
 
     pub fn make(&mut self) -> Option<TextBlob> {
@@ -170,7 +170,7 @@ impl Handle<SkTextBlobBuilder> {
                 offset.y,
                 bounds.native_ptr_or_null(),
             );
-            slice::from_raw_parts_mut((*buffer).glyphs, count)
+            safer::from_raw_parts_mut((*buffer).glyphs, count)
         }
     }
 
@@ -189,8 +189,8 @@ impl Handle<SkTextBlobBuilder> {
                 bounds.native_ptr_or_null(),
             );
             (
-                slice::from_raw_parts_mut((*buffer).glyphs, count),
-                slice::from_raw_parts_mut((*buffer).pos, count),
+                safer::from_raw_parts_mut((*buffer).glyphs, count),
+                safer::from_raw_parts_mut((*buffer).pos, count),
             )
         }
     }
@@ -208,8 +208,8 @@ impl Handle<SkTextBlobBuilder> {
                 bounds.native_ptr_or_null(),
             );
             (
-                slice::from_raw_parts_mut((*buffer).glyphs, count),
-                slice::from_raw_parts_mut((*buffer).pos as *mut Point, count),
+                safer::from_raw_parts_mut((*buffer).glyphs, count),
+                safer::from_raw_parts_mut((*buffer).pos as *mut Point, count),
             )
         }
     }
@@ -224,11 +224,13 @@ impl Handle<SkTextBlobBuilder> {
                 .native_mut()
                 .allocRunRSXform(font.native(), count.try_into().unwrap());
             (
-                slice::from_raw_parts_mut((*buffer).glyphs, count),
-                slice::from_raw_parts_mut((*buffer).pos as *mut RSXform, count),
+                safer::from_raw_parts_mut((*buffer).glyphs, count),
+                safer::from_raw_parts_mut((*buffer).pos as *mut RSXform, count),
             )
         }
     }
+
+    // TODO: allocRunText, allocRunTextPosH, allocRunTextPos, allocRunTextRSXform
 }
 
 pub type TextBlobIter<'a> = Borrows<'a, Handle<SkTextBlob_Iter>>;
@@ -246,7 +248,8 @@ impl TextBlobRun<'_> {
 
 impl<'a> Borrows<'a, Handle<SkTextBlob_Iter>> {
     pub fn new(text_blob: &'a TextBlob) -> Self {
-        Handle::from_native(unsafe { SkTextBlob_Iter::new(text_blob.native()) }).borrows(text_blob)
+        Handle::from_native_c(unsafe { SkTextBlob_Iter::new(text_blob.native()) })
+            .borrows(text_blob)
     }
 }
 

@@ -24,6 +24,10 @@ impl Handle<SkStrings> {
         })
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn len(&self) -> usize {
         let mut count = 0;
         unsafe {
@@ -38,7 +42,7 @@ impl Index<usize> for Handle<SkStrings> {
     fn index(&self, index: usize) -> &Self::Output {
         let mut count = 0;
         let ptr = unsafe { sb::C_SkStrings_ptr_count(self.native(), &mut count) };
-        let slice = unsafe { std::slice::from_raw_parts(ptr as *const String, count) };
+        let slice = unsafe { safer::from_raw_parts(ptr as *const String, count) };
         &slice[index]
     }
 }

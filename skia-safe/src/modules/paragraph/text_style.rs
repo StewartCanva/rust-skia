@@ -1,18 +1,20 @@
 use super::{FontFamilies, TextBaseline, TextShadow};
-use crate::interop::{AsStr, FromStrs, SetStr};
-use crate::prelude::*;
-use crate::textlayout::{RangeExtensions, EMPTY_INDEX, EMPTY_RANGE};
-use crate::{interop, scalar, Color, FontMetrics, FontStyle, Paint, Typeface};
+use crate::{
+    interop::{self, AsStr, FromStrs, SetStr},
+    prelude::*,
+    scalar,
+    textlayout::{RangeExtensions, EMPTY_INDEX, EMPTY_RANGE},
+    Color, FontMetrics, FontStyle, Paint, Typeface,
+};
 use skia_bindings as sb;
 use std::ops::Range;
-use std::slice;
 
 bitflags! {
     pub struct TextDecoration: u32 {
         const NO_DECORATION = sb::skia_textlayout_TextDecoration::kNoDecoration as _;
         const UNDERLINE = sb::skia_textlayout_TextDecoration::kUnderline as _;
         const OVERLINE = sb::skia_textlayout_TextDecoration::kOverline as _;
-        const LINE_THROUGH = sb::skia_textlayout_TextDecoration::kOverline as _;
+        const LINE_THROUGH = sb::skia_textlayout_TextDecoration::kLineThrough as _;
     }
 }
 
@@ -103,7 +105,7 @@ impl Handle<sb::skia_textlayout_FontFeature> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PlaceholderStyle {
     pub width: scalar,
     pub height: scalar,
@@ -121,18 +123,6 @@ fn placeholder_style_layout() {
 impl PartialEq for PlaceholderStyle {
     fn eq(&self, other: &Self) -> bool {
         unsafe { self.native().equals(other.native()) }
-    }
-}
-
-impl Default for PlaceholderStyle {
-    fn default() -> Self {
-        Self::new(
-            0.0,
-            0.0,
-            PlaceholderAlignment::Baseline,
-            TextBaseline::Alphabetic,
-            0.0,
-        )
     }
 }
 
@@ -184,11 +174,11 @@ impl Default for Handle<sb::skia_textlayout_TextStyle> {
 
 impl Handle<sb::skia_textlayout_TextStyle> {
     pub fn new() -> Self {
-        TextStyle::from_native(unsafe { sb::skia_textlayout_TextStyle::new() })
+        TextStyle::construct(|ts| unsafe { sb::C_TextStyle_Construct(ts) })
     }
 
     pub fn to_placeholder(&self) -> Self {
-        TextStyle::from_native(unsafe { sb::skia_textlayout_TextStyle::new1(self.native(), true) })
+        TextStyle::from_native_c(unsafe { sb::skia_textlayout_TextStyle::new(self.native(), true) })
     }
 
     pub fn equals(&self, other: &TextStyle) -> bool {
@@ -204,7 +194,7 @@ impl Handle<sb::skia_textlayout_TextStyle> {
     }
 
     pub fn color(&self) -> Color {
-        Color::from_native(self.native().fColor)
+        Color::from_native_c(self.native().fColor)
     }
 
     pub fn set_color(&mut self, color: impl Into<Color>) -> &mut Self {
@@ -251,7 +241,7 @@ impl Handle<sb::skia_textlayout_TextStyle> {
     }
 
     pub fn font_style(&self) -> FontStyle {
-        FontStyle::from_native(self.native().fFontStyle)
+        FontStyle::from_native_c(self.native().fFontStyle)
     }
 
     pub fn set_font_style(&mut self, font_style: FontStyle) -> &mut Self {
@@ -263,8 +253,8 @@ impl Handle<sb::skia_textlayout_TextStyle> {
         unsafe {
             let ts: &sb::TextShadows = transmute_ref(&self.native().fTextShadows);
             let mut cnt = 0;
-            let ptr = TextShadow::from_native_ref(&*sb::C_TextShadows_ptr_count(ts, &mut cnt));
-            slice::from_raw_parts(ptr, cnt)
+            let ptr = TextShadow::from_native_ptr(sb::C_TextShadows_ptr_count(ts, &mut cnt));
+            safer::from_raw_parts(ptr, cnt)
         }
     }
 
@@ -282,8 +272,8 @@ impl Handle<sb::skia_textlayout_TextStyle> {
         unsafe {
             let ff: &sb::FontFeatures = transmute_ref(&self.native().fFontFeatures);
             let mut cnt = 0;
-            let ptr = FontFeature::from_native_ref(&*sb::C_FontFeatures_ptr_count(ff, &mut cnt));
-            slice::from_raw_parts(ptr, cnt)
+            let ptr = FontFeature::from_native_ptr(sb::C_FontFeatures_ptr_count(ff, &mut cnt));
+            safer::from_raw_parts(ptr, cnt)
         }
     }
 
@@ -309,7 +299,7 @@ impl Handle<sb::skia_textlayout_TextStyle> {
         unsafe {
             let mut count = 0;
             let ptr = sb::C_TextStyle_getFontFamilies(self.native(), &mut count);
-            FontFamilies(slice::from_raw_parts(ptr, count))
+            FontFamilies(safer::from_raw_parts(ptr, count))
         }
     }
 
@@ -470,8 +460,7 @@ fn placeholder_layout() {
 
 impl Default for Placeholder {
     fn default() -> Self {
-        #[allow(clippy::unknown_clippy_lints)]
-        #[allow(clippy::reversed_empty_ranges)] // 1.45 lint
+        #[allow(clippy::reversed_empty_ranges)]
         Self {
             range: EMPTY_RANGE,
             style: Default::default(),

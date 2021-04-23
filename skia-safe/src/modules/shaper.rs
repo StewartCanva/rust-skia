@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::{scalar, Font, FontMgr, FourByteTag, Point, TextBlob};
-pub use run_handler::RunHandler;
 use skia_bindings as sb;
 use skia_bindings::{
     RustRunHandler, SkShaper, SkShaper_BiDiRunIterator, SkShaper_FontRunIterator,
@@ -10,6 +9,8 @@ use skia_bindings::{
 use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::os::raw;
+
+pub use run_handler::RunHandler;
 
 pub type Shaper = RefHandle<SkShaper>;
 unsafe impl Send for Shaper {}
@@ -21,13 +22,13 @@ impl NativeDrop for SkShaper {
     }
 }
 
-impl Default for RefHandle<SkShaper> {
+impl Default for Shaper {
     fn default() -> Self {
         Self::new(None)
     }
 }
 
-impl RefHandle<SkShaper> {
+impl Shaper {
     pub fn new_primitive() -> Self {
         Self::from_ptr(unsafe { sb::C_SkShaper_MakePrimitive() }).unwrap()
     }
@@ -50,12 +51,20 @@ impl RefHandle<SkShaper> {
         })
     }
 
-    pub fn new(font_mgr: impl Into<Option<FontMgr>>) -> Self {
-        Self::from_ptr(unsafe { sb::C_SkShaper_Make(font_mgr.into().into_ptr_or_null()) }).unwrap()
+    pub fn purge_harf_buzz_cache() {
+        unsafe { sb::SkShaper_PurgeHarfBuzzCache() }
     }
 
     pub fn new_core_text() -> Option<Self> {
         Self::from_ptr(unsafe { sb::C_SkShaper_MakeCoreText() })
+    }
+
+    pub fn new(font_mgr: impl Into<Option<FontMgr>>) -> Self {
+        Self::from_ptr(unsafe { sb::C_SkShaper_Make(font_mgr.into().into_ptr_or_null()) }).unwrap()
+    }
+
+    pub fn purge_caches() {
+        unsafe { sb::SkShaper_PurgeCaches() }
     }
 }
 
@@ -186,7 +195,7 @@ impl NativeDrop for SkShaper_ScriptRunIterator {
 
 impl RefHandle<SkShaper_ScriptRunIterator> {
     pub fn current_script(&self) -> FourByteTag {
-        FourByteTag::from_native(unsafe {
+        FourByteTag::from_native_c(unsafe {
             sb::C_SkShaper_ScriptRunIterator_currentScript(self.native())
         })
     }
@@ -205,6 +214,8 @@ impl RefHandle<SkShaper> {
         .unwrap()
         .borrows(utf8)
     }
+
+    // TODO: wrap MakeSkUnicodeHbScriptRunIterator (m88: uses type SkUnicode defined in src/).
 
     pub fn new_hb_icu_script_run_iterator(utf8: &str) -> Borrows<ScriptRunIterator> {
         let bytes = utf8.as_bytes();
@@ -298,7 +309,7 @@ pub mod run_handler {
             RunInfo {
                 font: Font::from_native_ref(unsafe { &*ri.fFont }),
                 bidi_level: ri.fBidiLevel,
-                advance: Vector::from_native(ri.fAdvance),
+                advance: Vector::from_native_c(ri.fAdvance),
                 glyph_count: ri.glyphCount,
                 utf8_range: utf8_range.fBegin..utf8_range.fBegin + utf8_range.fSize,
             }
@@ -358,14 +369,14 @@ pub mod run_handler {
                 .map(|clusters| slice::from_raw_parts_mut(clusters.as_ptr(), glyph_count));
 
             Buffer {
-                glyphs: slice::from_raw_parts_mut(buffer.glyphs, glyph_count),
-                positions: slice::from_raw_parts_mut(
-                    Point::from_native_ref_mut(&mut *buffer.positions),
+                glyphs: safer::from_raw_parts_mut(buffer.glyphs, glyph_count),
+                positions: safer::from_raw_parts_mut(
+                    Point::from_native_ptr_mut(buffer.positions),
                     glyph_count,
                 ),
                 offsets,
                 clusters,
-                point: Point::from_native(buffer.point),
+                point: Point::from_native_c(buffer.point),
             }
         }
 
@@ -609,7 +620,9 @@ impl TextBlobBuilderRunHandler<'_> {
     }
 
     pub fn end_point(&mut self) -> Point {
-        Point::from_native(unsafe { sb::C_SkTextBlobBuilderRunHandler_endPoint(self.native_mut()) })
+        Point::from_native_c(unsafe {
+            sb::C_SkTextBlobBuilderRunHandler_endPoint(self.native_mut())
+        })
     }
 }
 

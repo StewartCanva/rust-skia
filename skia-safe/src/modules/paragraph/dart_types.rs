@@ -75,8 +75,7 @@ impl RangeExtensions for Range<usize> {
     }
 }
 
-#[allow(clippy::unknown_clippy_lints)]
-#[allow(clippy::reversed_empty_ranges)] // 1.45 lint
+#[allow(clippy::reversed_empty_ranges)]
 pub const EMPTY_RANGE: Range<usize> = Range {
     start: EMPTY_INDEX,
     end: EMPTY_INDEX,
@@ -95,3 +94,9 @@ fn test_text_height_behavior_naming() {
 }
 
 // m84: LineMetricStyle is declared but not used in the public API yet.
+
+pub use sb::skia_textlayout_DrawOptions as DrawOptions;
+#[test]
+fn test_draw_options_naming() {
+    let _ = DrawOptions::Replay;
+}

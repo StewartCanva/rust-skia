@@ -60,21 +60,21 @@ fn main() {
         }
     };
 
-    if drivers.contains(&drivers::CPU::NAME) {
-        draw_all(&mut drivers::CPU::new(), &out_path);
+    if drivers.contains(&drivers::Cpu::NAME) {
+        draw_all(&mut drivers::Cpu::new(), &out_path);
     }
 
-    if drivers.contains(&drivers::PDF::NAME) {
-        draw_all(&mut drivers::PDF::new(), &out_path);
+    if drivers.contains(&drivers::Pdf::NAME) {
+        draw_all(&mut drivers::Pdf::new(), &out_path);
     }
 
-    if drivers.contains(&drivers::SVG::NAME) {
-        draw_all(&mut drivers::SVG::new(), &out_path);
+    if drivers.contains(&drivers::Svg::NAME) {
+        draw_all(&mut drivers::Svg::new(), &out_path);
     }
 
     #[cfg(feature = "gl")]
     {
-        if drivers.contains(&drivers::OpenGL::NAME) {
+        if drivers.contains(&drivers::OpenGl::NAME) {
             let context = GLContext::<NativeGLContext>::create(
                 sparkle::gl::GlType::Gl,
                 GLVersion::MajorMinor(3, 3),
@@ -83,7 +83,7 @@ fn main() {
             .unwrap();
 
             context.make_current().unwrap();
-            draw_all(&mut drivers::OpenGL::new(), &out_path);
+            draw_all(&mut drivers::OpenGl::new(), &out_path);
         }
 
         if drivers.contains(&"opengl-es") {
@@ -95,7 +95,7 @@ fn main() {
             .unwrap();
 
             context.make_current().unwrap();
-            draw_all(&mut drivers::OpenGL::new(), &out_path);
+            draw_all(&mut drivers::OpenGl::new(), &out_path);
         }
     }
 
@@ -173,12 +173,12 @@ pub(crate) mod resources {
     pub fn color_wheel() -> Image {
         let bytes = include_bytes!("resources/color_wheel.png");
         let data = Data::new_copy(bytes);
-        Image::from_encoded(data, None).unwrap()
+        Image::from_encoded(data).unwrap()
     }
 
     pub fn mandrill() -> Image {
         let bytes = include_bytes!("resources/mandrill_512.png");
         let data = Data::new_copy(bytes);
-        Image::from_encoded(data, None).unwrap()
+        Image::from_encoded(data).unwrap()
     }
 }

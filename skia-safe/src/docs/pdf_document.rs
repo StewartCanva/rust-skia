@@ -1,11 +1,12 @@
 pub mod pdf {
-    use crate::interop::{self, DynamicMemoryWStream, SetStr};
-    use crate::prelude::*;
-    use crate::{scalar, DateTime, Document};
-    use interop::AsStr;
+    use crate::{
+        interop::{self, AsStr, DynamicMemoryWStream, SetStr},
+        prelude::*,
+        scalar, DateTime, Document,
+    };
     use skia_bindings as sb;
     use skia_bindings::{SkPDF_AttributeList, SkPDF_Metadata, SkPDF_StructureElementNode};
-    use std::{ffi::CString, mem, ptr, slice};
+    use std::{ffi::CString, mem, ptr};
 
     pub use sb::SkPDF_DocumentStructureType as DocumentStructureType;
     #[test]
@@ -25,7 +26,7 @@ pub mod pdf {
 
     impl Default for AttributeList {
         fn default() -> Self {
-            AttributeList::from_native(unsafe { SkPDF_AttributeList::new() })
+            AttributeList::from_native_c(unsafe { SkPDF_AttributeList::new() })
         }
     }
 
@@ -185,12 +186,9 @@ pub mod pdf {
 
         pub fn child_vector(&self) -> &[StructureElementNode] {
             let mut ptr = ptr::null_mut();
-            let len =
-                unsafe { sb::C_SkPDF_StructureElementNode_getChildVector(self.native(), &mut ptr) };
-            if len == 0 {
-                &[]
-            } else {
-                unsafe { slice::from_raw_parts(ptr as _, len) }
+            unsafe {
+                let len = sb::C_SkPDF_StructureElementNode_getChildVector(self.native(), &mut ptr);
+                safer::from_raw_parts(ptr as _, len)
             }
         }
 
