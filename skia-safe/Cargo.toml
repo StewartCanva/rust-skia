@@ -47,7 +47,6 @@ skia-bindings = { version = "=0.38.3", path = "../skia-bindings" }
 winapi = { version = "0.3.9", features = ["d3d12", "dxgi"], optional = true }
 # for ComPtr
 wio = { version = "0.2.2", optional = true }
-mozjpeg = "0.8.24"
 
 [dev-dependencies]
 serial_test = "0.5"
