@@ -333,6 +333,7 @@ impl FinalBuildConfiguration {
                     // We make this explicit to avoid relying on an expat installed
                     // in the system.
                     use_expat = true;
+                    args.push(("skia_use_system_libjpeg_turbo", yes()));
                 }
                 (_, "apple", "darwin", _) => {
                     args.push(("skia_use_system_freetype2", no()));
