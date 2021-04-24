@@ -342,7 +342,7 @@ impl FinalBuildConfiguration {
                     // in the system.
                     use_expat = true;
                 }
-                (arch, "apple", "darwin", _) => {
+                (_, "apple", "darwin", _) => {
                     args.push(("skia_use_system_freetype2", no()));
                     args.push(("skia_enable_fontmgr_custom_empty", yes()));
                 }
