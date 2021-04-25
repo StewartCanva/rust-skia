@@ -166,7 +166,15 @@ extern "C" void C_SkEncodedOriginToMatrix(SkEncodedOrigin origin, int w, int h, 
 // core/
 //
 
-extern "C" void C_Core_Types(SkCubicMap *, SkGraphics *, SkCoverageMode *, SkColorChannelFlag *) {};
+extern "C" void C_Core_Types(SkGraphics *, SkCoverageMode *, SkColorChannelFlag *) {};
+
+//
+// core/SkCubicMap.h
+//
+
+extern "C" SkPoint C_SkCubicMap_computeFromT(const SkCubicMap* self, float t) {
+    return self->computeFromT(t);
+}
 
 //
 // core/SkSurface.h
@@ -224,6 +232,10 @@ extern "C" const SkSurfaceProps* C_SkSurface_props(const SkSurface* self) {
     return &self->props();
 }
 
+extern "C" bool C_SkSurface_draw(SkSurface* self, const SkDeferredDisplayList* displayList) {
+    return self->draw(sp(displayList));
+}
+
 //
 // core/SkSurfaceCharacterization.h
 //
@@ -265,16 +277,12 @@ extern "C" SkImage* C_SkImage_MakeFromBitmap(const SkBitmap* bitmap) {
     return SkImage::MakeFromBitmap(*bitmap).release();
 }
 
-extern "C" SkImage* C_SkImage_MakeFromGenerator(SkImageGenerator* imageGenerator, const SkIRect* subset) {
-    return SkImage::MakeFromGenerator(std::unique_ptr<SkImageGenerator>(imageGenerator), subset).release();
+extern "C" SkImage* C_SkImage_MakeFromGenerator(SkImageGenerator* imageGenerator) {
+    return SkImage::MakeFromGenerator(std::unique_ptr<SkImageGenerator>(imageGenerator)).release();
 }
 
-extern "C" SkImage* C_SkImage_MakeFromEncoded(SkData* encoded, const SkIRect* subset) {
-    return SkImage::MakeFromEncoded(sp(encoded), subset).release();
-}
-
-extern "C" SkImage* C_SkImage_DecodeToRaster(const void* encoded, size_t length, const SkIRect* subset) {
-    return SkImage::DecodeToRaster(encoded, length, subset).release();
+extern "C" SkImage* C_SkImage_MakeFromEncoded(SkData* encoded) {
+    return SkImage::MakeFromEncoded(sp(encoded)).release();
 }
 
 extern "C" SkImage* C_SkImage_MakeFromPicture(
@@ -291,7 +299,15 @@ extern "C" SkShader* C_SkImage_makeShader(const SkImage* self, SkTileMode tileMo
     return self->makeShader(tileMode1, tileMode2, localMatrix).release();
 }
 
-extern "C" SkShader *C_SkImage_makeShader2(const SkImage *self, SkTileMode tileMode1, SkTileMode tileMode2, const SkMatrix *localMatrix, SkFilterQuality filterQuality)
+extern "C" SkShader* C_SkImage_makeShaderWithFilterOptions(const SkImage* self, SkTileMode tileMode1, SkTileMode tileMode2, SkFilterOptions filterOptions, const SkMatrix* localMatrix) {
+    return self->makeShader(tileMode1, tileMode2, filterOptions, localMatrix).release();
+}
+
+extern "C" SkShader* C_SkImage_makeShaderWithCubicResampler(const SkImage* self, SkTileMode tileMode1, SkTileMode tileMode2, SkImage::CubicResampler cubicResampler, const SkMatrix* localMatrix) {
+    return self->makeShader(tileMode1, tileMode2, cubicResampler, localMatrix).release();
+}
+
+extern "C" SkShader *C_SkImage_makeShaderWithQuality(const SkImage *self, SkTileMode tileMode1, SkTileMode tileMode2, const SkMatrix *localMatrix, SkFilterQuality filterQuality)
 {
     return self->makeShader(tileMode1, tileMode2, localMatrix, filterQuality).release();
 }
@@ -304,8 +320,12 @@ extern "C" SkData* C_SkImage_refEncodedData(const SkImage* self) {
     return self->refEncodedData().release();
 }
 
-extern "C" SkImage* C_SkImage_makeSubset(const SkImage* self, const SkIRect* subset) {
-    return self->makeSubset(*subset).release();
+extern "C" SkImage* C_SkImage_makeSubset(const SkImage* self, const SkIRect* subset, GrDirectContext* direct) {
+    return self->makeSubset(*subset, direct).release();
+}
+
+extern "C" SkImage* C_SkImage_withDefaultMipmaps(const SkImage* self) {
+    return self->withDefaultMipmaps().release();
 }
 
 extern "C" SkImage* C_SkImage_makeNonTextureImage(const SkImage* self) {
@@ -317,15 +337,15 @@ extern "C" SkImage* C_SkImage_makeRasterImage(const SkImage* self, SkImage::Cach
 }
 
 // note: available without GPU support (GrContext may be null).
-extern "C" SkImage *C_SkImage_makeWithFilter(const SkImage *self, GrContext *context,
+extern "C" SkImage *C_SkImage_makeWithFilter(const SkImage *self, GrRecordingContext *context,
                                              const SkImageFilter *filter, const SkIRect *subset,
                                              const SkIRect *clipBounds, SkIRect *outSubset,
                                              SkIPoint *offset) {
     return self->makeWithFilter(context, filter, *subset, *clipBounds, outSubset, offset).release();
 }
 
-extern "C" SkImage* C_SkImage_makeColorSpace(const SkImage* self, SkColorSpace* target) {
-    return self->makeColorSpace(sp(target)).release();
+extern "C" SkImage* C_SkImage_makeColorSpace(const SkImage* self, SkColorSpace* target, GrDirectContext* direct) {
+    return self->makeColorSpace(sp(target), direct).release();
 }
 
 extern "C" SkImage* C_SkImage_reinterpretColorSpace(const SkImage* self, SkColorSpace* newColorSpace) {
@@ -448,6 +468,55 @@ extern "C" void C_SkPaint_setImageFilter(SkPaint* self, SkImageFilter* imageFilt
 // core/SkPath.h
 //
 
+extern "C" void C_SkPath_Construct(SkPath* uninitialized) {
+    new(uninitialized) SkPath();
+}
+
+extern "C" void C_SkPath_Make(SkPath* uninitialized, 
+    const SkPoint pts[], int pointCount,
+    const uint8_t vbs[], int verbCount,
+    const SkScalar ws[], int wCount,
+    SkPathFillType ft, bool isVolatile) {
+    new(uninitialized) SkPath(SkPath::Make(pts, pointCount, vbs, verbCount, ws, wCount, ft, isVolatile));
+}
+
+extern "C" void C_SkPath_Rect(SkPath* uninitialized,
+    const SkRect& r, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::Rect(r, dir));
+}
+
+extern "C" void C_SkPath_Oval(SkPath* uninitialized,
+    const SkRect& r, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::Oval(r, dir));
+}
+
+extern "C" void C_SkPath_OvalWithStartIndex(SkPath* uninitialized,
+    const SkRect& r, SkPathDirection dir, unsigned startIndex) {
+    new(uninitialized) SkPath(SkPath::Oval(r, dir, startIndex));
+}
+
+extern "C" void C_SkPath_Circle(SkPath* uninitialized,
+    SkScalar x, SkScalar y, SkScalar r, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::Circle(x, y, r, dir));
+}
+
+extern "C" void C_SkPath_RRect(SkPath* uninitialized,
+    const SkRRect& rr, SkPathDirection dir) {
+    new(uninitialized) SkPath(SkPath::RRect(rr, dir));
+}
+
+extern "C" void C_SkPath_RRectWithStartIndex(SkPath* uninitialized,
+    const SkRRect& r, SkPathDirection dir, unsigned startIndex) {
+    new(uninitialized) SkPath(SkPath::RRect(r, dir, startIndex));
+}
+
+extern "C" void C_SkPath_Polygon(SkPath* uninitialized,
+    const SkPoint pts[], int count, bool isClosed,
+    SkPathFillType ft,
+    bool isVolatile) {
+    new(uninitialized) SkPath(SkPath::Polygon(pts, count, isClosed, ft, isVolatile));
+}
+
 extern "C" void C_SkPath_destruct(const SkPath* self) {
     self->~SkPath();
 }
@@ -488,12 +557,8 @@ extern "C" SkPathFillType C_SkPath_getFillType(const SkPath* self) {
     return self->getFillType();
 }
 
-extern "C" SkPathConvexityType C_SkPath_getConvexityType(const SkPath* self) {
-    return self->getConvexityType();
-}
-
-extern "C" SkPathConvexityType C_SkPath_getConvexityTypeOrUnknown(const SkPath* self) {
-    return self->getConvexityTypeOrUnknown();
+extern "C" bool C_SkPath_isConvex(const SkPath* self) {
+    return self->isConvex();
 }
 
 extern "C" bool C_SkPath_isEmpty(const SkPath* self) {
@@ -504,8 +569,16 @@ extern "C" bool C_SkPath_isFinite(const SkPath* self) {
     return self->isFinite();
 }
 
+extern "C" SkPoint C_SkPath_getPoint(const SkPath* self, int index) {
+    return self->getPoint(index);
+}
+
 extern "C" const SkRect* C_SkPath_getBounds(const SkPath* self) {
     return &self->getBounds();
+}
+
+extern "C" SkRect C_SkPath_computeTightBounds(const SkPath* self) {
+    return self->computeTightBounds();
 }
 
 extern "C" uint32_t C_SkPath_getSegmentMasks(const SkPath* self) {
@@ -516,25 +589,38 @@ extern "C" uint32_t C_SkPath_getSegmentMasks(const SkPath* self) {
 // core/SkPathBuilder.h
 //
 
+extern "C" void C_SkPathBuilder_Construct(SkPathBuilder* uninitialized) {
+    new(uninitialized) SkPathBuilder();
+}
+
+/* m87: Implementation is missing.
+extern "C" void C_SkPathBuilder_Construct2(SkPathBuilder* uninitialized, SkPathFillType fillType) {
+    new(uninitialized) SkPathBuilder(fillType);
+}
+*/
+
+extern "C" void C_SkPathBuilder_Construct3(SkPathBuilder* uninitialized, const SkPath& path) {
+    new(uninitialized) SkPathBuilder(path);
+}
+
+extern "C" SkRect C_SkPathBuilder_computeBounds(const SkPathBuilder* self) {
+    return self->computeBounds();
+}
+
+extern "C" void C_SkPathBuilder_CopyConstruct(SkPathBuilder* uninitialized, const SkPathBuilder& pathBuilder) {
+    new(uninitialized) SkPathBuilder(pathBuilder);
+}
+
 extern "C" void C_SkPathBuilder_destruct(SkPathBuilder* self) {
     self->~SkPathBuilder();
 }
 
-extern "C" void C_SkPathBuilder_snapshot(SkPathBuilder* self, SkPath* path) {
+extern "C" void C_SkPathBuilder_snapshot(const SkPathBuilder* self, SkPath* path) {
     *path = self->snapshot();
 }
 
 extern "C" void C_SkPathBuilder_detach(SkPathBuilder* self, SkPath* path) {
     *path = self->detach();
-}
-
-extern "C" void C_SkPathBuilder_Make(
-    const SkPoint *points, int pointCount,
-    const uint8_t *verbs, int verbCount,
-    const SkScalar *weights, int cubicWeightCount,
-    SkPathFillType fillType, bool isVolatile, SkPath *path)
-{
-    *path = SkPathBuilder::Make(points, pointCount, verbs, verbCount, weights, cubicWeightCount, fillType, isVolatile);
 }
 
 //
@@ -550,7 +636,7 @@ extern "C" void C_SkPathMeasure_destruct(const SkPathMeasure* self) {
 //
 
 extern "C" void
-C_SkPathTypes_Types(SkPathFillType *, SkPathConvexityType *, SkPathDirection *, SkPathSegmentMask *, SkPathVerb *) {}
+C_SkPathTypes_Types(SkPathFillType *, SkPathDirection *, SkPathSegmentMask *, SkPathVerb *) {}
 
 //
 // core/SkCanvas.h
@@ -597,12 +683,24 @@ extern "C" void C_SkCanvas_clipShader(SkCanvas* self, SkShader* shader, SkClipOp
     self->clipShader(sp(shader), op);
 }
 
+extern "C" SkRect C_SkCanvas_getLocalClipBounds(const SkCanvas* self) {
+    return self->getLocalClipBounds();
+}
+
+extern "C" SkIRect C_SkCanvas_getDeviceClipBounds(const SkCanvas* self) {
+    return self->getDeviceClipBounds();
+}
+
 extern "C" bool C_SkCanvas_isClipEmpty(const SkCanvas* self) {
     return self->isClipEmpty();
 }
 
 extern "C" bool C_SkCanvas_isClipRect(const SkCanvas* self) {
     return self->isClipRect();
+}
+
+extern "C" void C_SkCanvas_getLocalToDevice(const SkCanvas* self, SkM44* uninitialized) {
+    new(uninitialized) SkM44(self->getLocalToDevice());
 }
 
 extern "C" void C_SkCanvas_getTotalMatrix(const SkCanvas* self, SkMatrix* matrix) {
@@ -738,10 +836,26 @@ extern "C" SkColorSpace* C_SkColorSpace_Deserialize(const void* data, size_t len
 //
 
 
-extern "C" void C_M44_Types(SkV2 *) {};
+extern "C" void C_SkM44_Types(SkV2 *) {};
 
-extern "C" bool C_M44_equals(const SkM44 *self, const SkM44 *other) {
+extern "C" bool C_SkM44_equals(const SkM44 *self, const SkM44 *other) {
     return *self == *other;
+}
+
+extern "C" void C_SkM44_transpose(const SkM44* self, SkM44* uninitialized) {
+    new(uninitialized) SkM44(self->transpose());
+}
+
+extern "C" SkV4 C_SkM44_map(const SkM44* self, float x, float y, float z, float w) {
+    return self->map(x, y, z, w);
+}
+
+extern "C" void C_Sk3LookAt(const SkV3* eye, const SkV3* center, const SkV3* up, SkM44* uninitialized) {
+    new(uninitialized) SkM44(Sk3LookAt(*eye, *center, *up));
+}
+
+extern "C" void C_Sk3Perspective(float near, float far, float angle, SkM44* uninitialized) {
+    new(uninitialized) SkM44(Sk3Perspective(near, far, angle));
 }
 
 //
@@ -810,6 +924,10 @@ extern "C" bool C_SkMatrix_isFinite(const SkMatrix* self) {
     return self->isFinite();
 }
 
+extern "C" const SkMatrix* C_SkMatrix_InvalidMatrix() {
+    return &SkMatrix::InvalidMatrix();
+}
+
 extern "C" void C_SkMatrix_normalizePerspective(SkMatrix* self) {
     self->normalizePerspective();
 }
@@ -848,6 +966,10 @@ extern "C" bool C_SkBitmap_tryAllocN32Pixels(SkBitmap* self, int width, int heig
 
 extern "C" bool C_SkBitmap_tryAllocPixels(SkBitmap* self) {
     return self->tryAllocPixels();
+}
+
+extern "C" SkIPoint C_SkBitmap_pixelRefOrigin(const SkBitmap* self) {
+    return self->pixelRefOrigin();
 }
 
 extern "C" void C_SkBitmap_setPixelRef(SkBitmap* self, SkPixelRef* pixelRef, int dx, int dy) {
@@ -906,8 +1028,8 @@ extern "C" uint32_t C_SkPicture_uniqueID(const SkPicture* self) {
     return self->uniqueID();
 }
 
-extern "C" int C_SkPicture_approximateOpCount(const SkPicture* self) {
-    return self->approximateOpCount();
+extern "C" int C_SkPicture_approximateOpCount(const SkPicture* self, bool nested) {
+    return self->approximateOpCount(nested);
 }
 
 // note: returning size_t produces a linker error.
@@ -937,6 +1059,10 @@ extern "C" void C_SkRRect_setRect(SkRRect* self, const SkRect* rect) {
 
 extern "C" void C_SkRRect_setOval(SkRRect* self, const SkRect* oval) {
     self->setOval(*oval);
+}
+
+extern "C" void C_SkRRect_dumpToString(const SkRRect* self, bool asHex, SkString* str) {
+    *str = self->dumpToString(asHex);
 }
 
 extern "C" bool C_SkRRect_Equals(const SkRRect* lhs, const SkRRect* rhs) {
@@ -1108,6 +1234,10 @@ extern "C" SkTypeface* C_SkTypeface_MakeDeserialize(SkStream* stream) {
 
 extern "C" SkData* C_SkTypeface_copyTableData(const SkTypeface* self, SkFontTableTag tag) {
     return self->copyTableData(tag).release();
+}
+
+extern "C" SkRect C_SkTypeface_getBounds(const SkTypeface* self) {
+    return self->getBounds();
 }
 
 extern "C" void C_SkTypeface_LocalizedStrings_unref(SkTypeface::LocalizedStrings* self) {
@@ -1304,6 +1434,10 @@ extern "C" SkVertices* C_SkVertices_Builder_detach(SkVertices::Builder* builder)
 // SkPictureRecorder
 //
 
+extern "C" void C_SkPictureRecorder_Construct(SkPictureRecorder *uninitialized) {
+    new(uninitialized) SkPictureRecorder();
+}
+
 extern "C" void C_SkPictureRecorder_destruct(SkPictureRecorder *self) {
     self->~SkPictureRecorder();
 }
@@ -1410,6 +1544,14 @@ extern "C" SkColorFilter* C_SkColorFilter_Deserialize(const void* data, size_t l
     return static_cast<SkColorFilter*>(SkFlattenable::Deserialize(SkFlattenable::kSkColorFilter_Type, data, length).release());
 }
 
+extern "C" SkColor4f C_SkColorFilter_filterColor4f(
+    const SkColorFilter* self, 
+    const SkColor4f* srcColor, 
+    SkColorSpace* srcCS, 
+    SkColorSpace* dstCS) {
+    return self->filterColor4f(*srcColor, srcCS, dstCS);
+}
+
 //
 // SkColorFilters
 //
@@ -1429,6 +1571,10 @@ extern "C" SkColorFilter* C_SkColorFilters_Matrix(const SkColorMatrix* colorMatr
 
 extern "C" SkColorFilter* C_SkColorFilters_MatrixRowMajor(const SkScalar array[20]) {
     return SkColorFilters::Matrix(array).release();
+}
+
+extern "C" SkColorFilter* C_SkColorFilters_HSLAMatrixOfColorMatrix(const SkColorMatrix& colorMatrix) {
+    return SkColorFilters::HSLAMatrix(colorMatrix).release();
 }
 
 extern "C" SkColorFilter* C_SkColorFilters_HSLAMatrix(const float rowMajor[20]) {
@@ -1500,8 +1646,20 @@ extern "C" SkDeferredDisplayList* C_SkDeferredDisplayListRecorder_detach(SkDefer
     return self->detach().release();
 }
 
-extern "C" void C_SkDeferredDisplayList_delete(SkDeferredDisplayList* self) {
-    delete self;
+//
+// core/SkDeferredDisplayList.h
+//
+
+extern "C" void C_SkDeferredDisplayList_ref(const SkDeferredDisplayList* self) {
+    self->ref();
+}
+
+extern "C" void C_SkDeferredDisplayList_unref(const SkDeferredDisplayList* self) {
+    self->unref();
+}
+
+extern "C" bool C_SkDeferredDisplayList_unique(const SkDeferredDisplayList* self) {
+    return self->unique();
 }
 
 //
@@ -1524,6 +1682,10 @@ extern "C" SkDrawable* C_SkDrawable_Deserialize(const void* data, size_t length)
     return SkDrawable::Deserialize(data, length).release();
 }
 
+extern "C" SkRect C_SkDrawable_getBounds(SkDrawable* self) {
+    return self->getBounds();
+}
+
 //
 // SkImageFilter
 //
@@ -1542,6 +1704,15 @@ extern "C" SkImageFilter* C_SkImageFilter_MakeMatrixFilter(const SkMatrix* matri
 
 extern "C" SkImageFilter* C_SkImageFilter_Deserialize(const void* data, size_t length) {
     return SkImageFilter::Deserialize(data, length).release();
+}
+
+extern "C" SkIRect C_SkImageFilter_filterBounds(
+    const SkImageFilter* self, 
+    const SkIRect* src, 
+    const SkMatrix* ctm, 
+    SkImageFilter::MapDirection mapDirection, 
+    const SkIRect* inputRect) {
+    return self ->filterBounds(*src, *ctm, mapDirection, inputRect);
 }
 
 extern "C" bool C_SkImageFilter_isColorFilterNode(const SkImageFilter* self, SkColorFilter** filterPtr) {
@@ -2287,14 +2458,10 @@ const SkString *C_SkRuntimeEffect_source(const SkRuntimeEffect *self) {
     return &self->source();
 }
 
-uint32_t C_SkRuntimeEffect_hash(const SkRuntimeEffect *self) {
-    return self->hash();
-}
-
-const SkRuntimeEffect::Variable* C_SkRuntimeEffect_inputs(const SkRuntimeEffect* self, size_t* count) {
-    auto inputs = self->inputs();
-    *count = inputs.count();
-    return &*inputs.begin();
+const SkRuntimeEffect::Uniform* C_SkRuntimeEffect_uniforms(const SkRuntimeEffect* self, size_t* count) {
+    auto uniforms = self->uniforms();
+    *count = uniforms.count();
+    return &*uniforms.begin();
 }
 
 const SkString* C_SkRuntimeEffect_children(const SkRuntimeEffect* self, size_t* count) {

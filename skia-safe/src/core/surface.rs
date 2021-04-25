@@ -59,6 +59,7 @@ impl RCHandle<SkSurface> {
         .map(move |surface| surface.borrows(pixels))
     }
 
+    // TODO: MakeRasterDirect(&Pixmap)
     // TODO: MakeRasterDirectReleaseProc()?
 
     pub fn new_raster(
@@ -142,7 +143,7 @@ impl RCHandle<SkSurface> {
 
     #[cfg(feature = "metal")]
     pub fn from_ca_metal_layer(
-        context: &mut gpu::Context,
+        context: &mut gpu::RecordingContext,
         layer: gpu::mtl::Handle,
         origin: gpu::SurfaceOrigin,
         sample_count: impl Into<Option<usize>>,
@@ -167,8 +168,30 @@ impl RCHandle<SkSurface> {
     }
 
     #[cfg(feature = "metal")]
+    #[deprecated(since = "0.36.0", note = "use from_mtk_view()")]
     pub fn from_ca_mtk_view(
         context: &mut gpu::Context,
+        mtk_view: gpu::mtl::Handle,
+        origin: gpu::SurfaceOrigin,
+        sample_count: impl Into<Option<usize>>,
+        color_type: crate::ColorType,
+        color_space: impl Into<Option<crate::ColorSpace>>,
+        surface_props: Option<&SurfaceProps>,
+    ) -> Option<Self> {
+        Self::from_mtk_view(
+            context,
+            mtk_view,
+            origin,
+            sample_count,
+            color_type,
+            color_space,
+            surface_props,
+        )
+    }
+
+    #[cfg(feature = "metal")]
+    pub fn from_mtk_view(
+        context: &mut gpu::RecordingContext,
         mtk_view: gpu::mtl::Handle,
         origin: gpu::SurfaceOrigin,
         sample_count: impl Into<Option<usize>>,
@@ -189,11 +212,10 @@ impl RCHandle<SkSurface> {
         })
     }
     pub fn new_render_target(
-        context: &mut gpu::Context,
+        context: &mut gpu::RecordingContext,
         budgeted: crate::Budgeted,
         image_info: &ImageInfo,
         sample_count: impl Into<Option<usize>>,
-        // not optional, because with vulkan, there is no clear default anymore.
         surface_origin: gpu::SurfaceOrigin,
         surface_props: Option<&SurfaceProps>,
         should_create_with_mips: impl Into<Option<bool>>,
@@ -212,7 +234,7 @@ impl RCHandle<SkSurface> {
     }
 
     pub fn new_render_target_with_characterization(
-        context: &mut gpu::Context,
+        context: &mut gpu::RecordingContext,
         characterization: &SurfaceCharacterization,
         budgeted: crate::Budgeted,
     ) -> Option<Self> {
@@ -225,20 +247,13 @@ impl RCHandle<SkSurface> {
         })
     }
 
-    // TODO: support TextureReleaseProc / ReleaseContext
-
+    #[deprecated(since = "0.36.0", note = "Removed without replacement")]
     pub fn from_backend_texture_with_caracterization(
-        context: &mut gpu::Context,
-        characterization: &SurfaceCharacterization,
-        backend_texture: &gpu::BackendTexture,
-    ) -> Option<Self> {
-        Self::from_ptr(unsafe {
-            sb::C_SkSurface_MakeFromBackendTexture2(
-                context.native_mut(),
-                characterization.native(),
-                backend_texture.native(),
-            )
-        })
+        _context: &mut gpu::Context,
+        _characterization: &SurfaceCharacterization,
+        _backend_texture: &gpu::BackendTexture,
+    ) -> ! {
+        panic!("Removed without replacement")
     }
 }
 
@@ -278,8 +293,18 @@ impl RCHandle<SkSurface> {
 
 #[cfg(feature = "gpu")]
 impl RCHandle<SkSurface> {
+    #[deprecated(
+        since = "0.35.0",
+        note = "Use recordingContext() and RecordingContext::as_direct_context()"
+    )]
     pub fn context(&mut self) -> Option<gpu::Context> {
-        gpu::Context::from_unshared_ptr(unsafe { self.native_mut().getContext() })
+        self.recording_context()
+            .and_then(|mut rc| rc.as_direct_context())
+            .map(|dc| dc.into())
+    }
+
+    pub fn recording_context(&mut self) -> Option<gpu::RecordingContext> {
+        gpu::RecordingContext::from_unshared_ptr(unsafe { self.native_mut().recordingContext() })
     }
 
     pub fn get_backend_texture(
@@ -308,10 +333,10 @@ impl RCHandle<SkSurface> {
             sb::C_SkSurface_getBackendRenderTarget(
                 self.native_mut(),
                 handle_access,
-                &mut backend_render_target as _,
+                &mut backend_render_target,
             );
 
-            gpu::BackendRenderTarget::from_native_if_valid(backend_render_target)
+            gpu::BackendRenderTarget::from_native_c_if_valid(backend_render_target)
         }
     }
 
@@ -431,9 +456,9 @@ impl RCHandle<SkSurface> {
         unsafe { self.native_mut().readPixels2(bitmap.native(), src.x, src.y) }
     }
 
-    // TODO: wrap AsyncReadResult (m79)
-    // TODO: wrap asyncRescaleAndReadPixels (m76/m79)
-    // TODO: wrap asyncRescaleAndReadPixelsYUV420 (m77/m79)
+    // TODO: AsyncReadResult, RescaleGamma (m79, m86)
+    // TODO: wrap asyncRescaleAndReadPixels (m76, m79)
+    // TODO: wrap asyncRescaleAndReadPixelsYUV420 (m77, m79)
 
     pub fn write_pixels_from_pixmap(&mut self, src: &Pixmap, dst: impl Into<IPoint>) {
         let dst = dst.into();
@@ -458,10 +483,12 @@ impl RCHandle<SkSurface> {
         }
     }
 
-    #[deprecated(since = "0.30.0", note = "Use flush_and_submit()")]
-    // when removed, replace it with flush_with_access() and deprecate it.
+    // After deprecated since 0.30.0 (m85), the default flush() behavior changed in m86.
+    // For more information, take a look at the documentation in Skia's SkSurface.h
+    #[cfg(feature = "gpu")]
     pub fn flush(&mut self) {
-        self.flush_and_submit()
+        let info = gpu::FlushInfo::default();
+        self.flush_with_mutable_state(&info, None);
     }
 
     #[cfg(feature = "gpu")]
@@ -473,7 +500,18 @@ impl RCHandle<SkSurface> {
         unsafe { self.native_mut().flush(access, info.native()) }
     }
 
-    // TODO: flush(FlushInfo, GrBackendSurfaceMutableState)
+    #[cfg(feature = "gpu")]
+    pub fn flush_with_mutable_state<'a>(
+        &mut self,
+        info: &gpu::FlushInfo,
+        new_state: impl Into<Option<&'a gpu::BackendSurfaceMutableState>>,
+    ) -> gpu::SemaphoresSubmitted {
+        unsafe {
+            self.native_mut()
+                .flush1(info.native(), new_state.into().native_ptr_or_null())
+        }
+    }
+
     // TODO: wait()
 
     pub fn characterize(&self) -> Option<SurfaceCharacterization> {
@@ -481,8 +519,16 @@ impl RCHandle<SkSurface> {
         unsafe { self.native().characterize(sc.native_mut()) }.if_true_some(sc)
     }
 
-    pub fn draw_display_list(&mut self, deferred_display_list: &mut DeferredDisplayList) -> bool {
-        unsafe { self.native_mut().draw1(deferred_display_list.native_mut()) }
+    pub fn draw_display_list(
+        &mut self,
+        deferred_display_list: impl Into<DeferredDisplayList>,
+    ) -> bool {
+        unsafe {
+            sb::C_SkSurface_draw(
+                self.native_mut(),
+                deferred_display_list.into().into_ptr() as *const _,
+            )
+        }
     }
 }
 

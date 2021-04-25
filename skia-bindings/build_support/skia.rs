@@ -178,8 +178,6 @@ impl FinalBuildConfiguration {
                 ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
                 ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
                 ("skia_use_system_zlib", no()),
-                ("skia_use_freetype", yes()),
-                ("skia_use_fonthost_mac", no()),
                 ("skia_use_xps", no()),
                 ("skia_use_dng_sdk", yes_if(features.dng)),
                 ("cc", quote("clang")),
@@ -201,7 +199,6 @@ impl FinalBuildConfiguration {
 
             // further flags that limit the components of Skia debug builds.
             if build.skia_debug {
-                args.push(("skia_enable_atlas_text", no()));
                 args.push(("skia_enable_spirv_validation", no()));
                 args.push(("skia_enable_tools", no()));
                 args.push(("skia_enable_vulkan_debug_layers", no()));
@@ -273,10 +270,6 @@ impl FinalBuildConfiguration {
                     // We make this explicit to avoid relying on an expat installed
                     // in the system.
                     use_expat = true;
-                }
-                (arch, "apple", "darwin", _) => {
-                    args.push(("skia_use_system_freetype2", no()));
-                    args.push(("skia_enable_fontmgr_custom_empty", yes()));
                 }
                 (arch, "apple", "ios", _) => {
                     args.push(("target_os", quote("ios")));
@@ -425,6 +418,8 @@ impl BinariesConfiguration {
                 }
                 if features.metal {
                     link_libraries.push("framework=Metal");
+                    // MetalKit was added in m87 BUILD.gn.
+                    link_libraries.push("framework=MetalKit");
                     link_libraries.push("framework=Foundation");
                 }
             }
@@ -471,10 +466,7 @@ impl BinariesConfiguration {
     /// Inform cargo that the library files of the given configuration are available and
     /// can be used as dependencies.
     pub fn commit_to_cargo(&self) {
-        println!(
-            "cargo:rustc-link-search={}",
-            self.output_directory.to_str().unwrap()
-        );
+        cargo::add_link_search(self.output_directory.to_str().unwrap());
 
         // On Linux, the order is significant, first the static libraries we built, and then
         // the system libraries.
@@ -659,8 +651,6 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         .blacklist_type("GrContextThreadSafeProxy")
         .raw_line("pub enum GrContextThreadSafeProxyPriv {}")
         .blacklist_type("GrContextThreadSafeProxyPriv")
-        .raw_line("pub enum GrRecordingContext {}")
-        .blacklist_type("GrRecordingContext")
         .raw_line("pub enum GrRecordingContextPriv {}")
         .blacklist_type("GrRecordingContextPriv")
         .raw_line("pub enum GrContextPriv {}")
@@ -670,6 +660,7 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         .raw_line("pub enum SkVerticesPriv {}")
         .blacklist_type("SkVerticesPriv")
         .blacklist_function("SkVertices_priv.*")
+        .blacklist_function("std::bitset_flip.*")
         // Vulkan reexports that got swallowed by making them opaque.
         // (these can not be whitelisted by a extern "C" function)
         .whitelist_type("VkPhysicalDeviceFeatures")
@@ -928,6 +919,12 @@ const OPAQUE_TYPES: &[&str] = &[
     "SkMutex",
     // m82: private
     "SkIDChangeListener",
+    // m86:
+    "GrRecordingContext",
+    "GrDirectContext",
+    // m87:
+    "GrD3DAlloc",
+    "GrD3DMemoryAllocator",
 ];
 
 const BLACKLISTED_TYPES: &[&str] = &[
@@ -1077,7 +1074,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("GrGLFormat", rewrite::k_xxx),
     ("GrSurfaceOrigin", rewrite::k_xxx_name),
     ("GrBackendApi", rewrite::k_xxx),
-    ("GrMipMapped", rewrite::k_xxx),
+    ("GrMipmapped", rewrite::k_xxx),
     ("GrRenderable", rewrite::k_xxx),
     ("GrProtected", rewrite::k_xxx),
     //
@@ -1090,6 +1087,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("TextDirection", rewrite::k_xxx_uppercase),
     ("TextBaseline", rewrite::k_xxx),
     ("TextHeightBehavior", rewrite::k_xxx),
+    ("DrawOptions", rewrite::k_xxx),
     //
     // TextStyle.h
     //
@@ -1114,8 +1112,13 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("Usage", rewrite::k_xxx),
     ("GrSemaphoresSubmitted", rewrite::k_xxx),
     ("BackendSurfaceAccess", rewrite::k_xxx),
-    // m85: VkSharingMode
+    // m85
     ("VkSharingMode", rewrite::vk),
+    // m86:
+    ("SkSamplingMode", rewrite::k_xxx),
+    ("SkMipmapMode", rewrite::k_xxx),
+    ("Enable", rewrite::k_xxx),
+    ("ShaderCacheStrategy", rewrite::k_xxx),
 ];
 
 pub(crate) mod rewrite {
@@ -1127,8 +1130,8 @@ pub(crate) mod rewrite {
     }
 
     pub fn k_xxx(name: &str, variant: &str) -> String {
-        if variant.starts_with('k') {
-            variant[1..].into()
+        if let Some(stripped) = variant.strip_prefix('k') {
+            stripped.into()
         } else {
             panic!(
                 "Variant name '{}' of enum type '{}' is expected to start with a 'k'",
@@ -1360,8 +1363,8 @@ pub(crate) mod definitions {
             defines
                 .split_whitespace()
                 .map(|d| {
-                    if d.starts_with(prefix) {
-                        &d[prefix.len()..]
+                    if let Some(stripped) = d.strip_prefix(prefix) {
+                        stripped
                     } else {
                         panic!("missing '-D' prefix from a definition")
                     }

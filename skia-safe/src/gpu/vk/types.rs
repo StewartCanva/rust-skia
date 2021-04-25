@@ -65,9 +65,14 @@ impl Alloc {
         size: vk::DeviceSize,
         flags: AllocFlag,
     ) -> Alloc {
-        Alloc::construct(|alloc| {
-            sb::C_GrVkAlloc_Construct(alloc, memory, offset, size, flags.bits())
-        })
+        Alloc {
+            memory,
+            offset,
+            size,
+            flags,
+            backend_memory: 0,
+            uses_system_heap: false,
+        }
     }
 }
 
@@ -75,7 +80,7 @@ impl Alloc {
 #[repr(C)]
 pub struct YcbcrConversionInfo {
     pub format: vk::Format,
-    pub external_format: i64,
+    pub external_format: u64,
     pub ycrbcr_model: vk::SamplerYcbcrModelConversion,
     pub ycbcr_range: vk::SamplerYcbcrRange,
     pub x_chroma_offset: vk::ChromaLocation,
@@ -117,7 +122,7 @@ impl YcbcrConversionInfo {
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_format(
         format: vk::Format,
-        external_format: i64,
+        external_format: u64,
         ycrbcr_model: vk::SamplerYcbcrModelConversion,
         ycbcr_range: vk::SamplerYcbcrRange,
         x_chroma_offset: vk::ChromaLocation,
@@ -149,7 +154,7 @@ impl YcbcrConversionInfo {
         y_chroma_offset: vk::ChromaLocation,
         chroma_filter: vk::Filter,
         force_explicit_reconstruction: vk::Bool32,
-        external_format: i64,
+        external_format: u64,
         external_format_features: vk::FormatFeatureFlags,
     ) -> YcbcrConversionInfo {
         Self::new_with_format(
@@ -178,6 +183,8 @@ pub struct ImageInfo {
     pub tiling: vk::ImageTiling,
     pub layout: vk::ImageLayout,
     pub format: vk::Format,
+    pub image_usage_flags: vk::ImageUsageFlags,
+    pub sample_count: u32,
     pub level_count: u32,
     pub current_queue_family: u32,
     pub protected: Protected,
@@ -201,6 +208,8 @@ impl Default for ImageInfo {
             tiling: vk::ImageTiling::OPTIMAL,
             layout: vk::ImageLayout::UNDEFINED,
             format: vk::Format::UNDEFINED,
+            image_usage_flags: 0,
+            sample_count: 1,
             level_count: 0,
             current_queue_family: vk::QUEUE_FAMILY_IGNORED,
             protected: Protected::No,
@@ -243,6 +252,7 @@ impl ImageInfo {
             protected,
             ycbcr_conversion_info,
             sharing_mode,
+            ..Self::default()
         }
     }
 
