@@ -178,6 +178,8 @@ impl FinalBuildConfiguration {
                 ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
                 ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
                 ("skia_use_system_zlib", no()),
+                ("skia_use_freetype", yes()),
+                ("skia_use_fonthost_mac", no()),
                 ("skia_use_xps", no()),
                 ("skia_use_dng_sdk", yes_if(features.dng)),
                 ("cc", quote("clang")),
@@ -271,7 +273,11 @@ impl FinalBuildConfiguration {
                     // in the system.
                     use_expat = true;
                 }
-                (arch, "apple", "ios", _) => {
+                (_, "apple", "darwin", _) => {
+                    args.push(("skia_use_system_freetype2", no()));
+                    args.push(("skia_enable_fontmgr_custom_empty", yes()));
+                }
+                (arch, _, "ios", _) => {
                     args.push(("target_os", quote("ios")));
                     args.push(("target_cpu", quote(clang::target_arch(arch))));
                 }
