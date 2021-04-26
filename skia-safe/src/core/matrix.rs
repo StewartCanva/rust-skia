@@ -1,6 +1,5 @@
 use super::scalar_;
-use crate::prelude::*;
-use crate::{scalar, Point, Point3, RSXform, Rect, Scalar, Size, Vector};
+use crate::{prelude::*, scalar, Point, Point3, RSXform, Rect, Scalar, Size, Vector};
 use skia_bindings as sb;
 use skia_bindings::SkMatrix;
 use std::ops::{Index, IndexMut, Mul};
@@ -164,6 +163,12 @@ impl Matrix {
         m
     }
 
+    pub fn rotate_deg_pivot(deg: scalar, pivot: impl Into<Point>) -> Matrix {
+        let mut m = Matrix::new();
+        m.set_rotate(deg, pivot.into());
+        m
+    }
+
     pub fn rotate_rad(rad: scalar) -> Matrix {
         Self::rotate_deg(scalar_::radians_to_degrees(rad))
     }
@@ -221,6 +226,12 @@ impl Matrix {
 
     pub fn preserves_right_angles(&self) -> bool {
         unsafe { self.native().preservesRightAngles(scalar::NEARLY_ZERO) }
+    }
+
+    pub fn rc(&self, r: usize, c: usize) -> scalar {
+        assert!(r <= 2);
+        assert!(c <= 2);
+        self[r * 3 + c]
     }
 
     pub fn scale_x(&self) -> scalar {
@@ -624,15 +635,29 @@ impl Matrix {
         };
     }
 
-    pub fn map_xy(&self, x: scalar, y: scalar) -> Point {
-        self.map_point((x, y))
-    }
-
     pub fn map_point(&self, point: impl Into<Point>) -> Point {
         let point = point.into();
         let mut p = Point::default();
         unsafe { self.native().mapXY(point.x, point.y, p.native_mut()) };
         p
+    }
+
+    pub fn map_xy(&self, x: scalar, y: scalar) -> Point {
+        self.map_point((x, y))
+    }
+
+    pub fn map_origin(&self) -> Point {
+        let mut x = self.translate_x();
+        let mut y = self.translate_y();
+        if self.has_perspective() {
+            let mut w = self[Member::Persp2];
+            if w != 0.0 {
+                w = 1.0 / w;
+            }
+            x *= w;
+            y *= w;
+        }
+        Point::new(x, y)
     }
 
     pub fn map_vectors(&self, dst: &mut [Vector], src: &[Vector]) {
@@ -749,7 +774,7 @@ impl Matrix {
     }
 
     pub fn invalid_matrix() -> &'static Matrix {
-        &INVALID
+        Self::from_native_ref(unsafe { &*sb::C_SkMatrix_InvalidMatrix() })
     }
 
     pub fn concat(a: &Matrix, b: &Matrix) -> Matrix {
@@ -785,10 +810,6 @@ impl IndexGet for Matrix {}
 impl IndexSet for Matrix {}
 
 pub const IDENTITY: Matrix = Matrix::new_identity();
-
-lazy_static! {
-    static ref INVALID: Matrix = Matrix::from_native(unsafe { *SkMatrix::InvalidMatrix() });
-}
 
 #[test]
 fn test_get_set_trait_compilation() {

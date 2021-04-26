@@ -56,13 +56,17 @@ impl NativeHash for SkPaint {
 
 impl Default for Handle<SkPaint> {
     fn default() -> Self {
-        Paint::from_native(unsafe { SkPaint::new() })
+        Paint::from_native_c(unsafe { SkPaint::new() })
     }
 }
 
 impl Handle<SkPaint> {
-    pub fn new(color: impl AsRef<Color4f>, color_space: Option<&ColorSpace>) -> Paint {
-        Paint::from_native(unsafe {
+    pub fn new<'a>(
+        color: impl AsRef<Color4f>,
+        color_space: impl Into<Option<&'a ColorSpace>>,
+    ) -> Paint {
+        let color_space = color_space.into();
+        Paint::from_native_c(unsafe {
             SkPaint::new1(
                 color.as_ref().native(),
                 color_space.native_ptr_or_null_mut_force(),
@@ -103,10 +107,12 @@ impl Handle<SkPaint> {
         self
     }
 
+    #[deprecated(since = "0.38.0")]
     pub fn filter_quality(&self) -> FilterQuality {
         unsafe { sb::C_SkPaint_getFilterQuality(self.native()) }
     }
 
+    #[deprecated(since = "0.38.0")]
     pub fn set_filter_quality(&mut self, quality: FilterQuality) -> &mut Self {
         unsafe { self.native_mut().setFilterQuality(quality) }
         self
@@ -131,7 +137,7 @@ impl Handle<SkPaint> {
     }
 
     pub fn color4f(&self) -> Color4f {
-        Color4f::from_native(self.native().fColor4f)
+        Color4f::from_native_c(self.native().fColor4f)
     }
 
     pub fn set_color(&mut self, color: impl Into<Color>) -> &mut Self {
@@ -140,14 +146,17 @@ impl Handle<SkPaint> {
         self
     }
 
-    pub fn set_color4f(
+    pub fn set_color4f<'a>(
         &mut self,
         color: impl AsRef<Color4f>,
-        color_space: &ColorSpace,
+        color_space: impl Into<Option<&'a ColorSpace>>,
     ) -> &mut Self {
+        let color_space: Option<&'a ColorSpace> = color_space.into();
         unsafe {
-            self.native_mut()
-                .setColor1(color.as_ref().native(), color_space.native_mut_force())
+            self.native_mut().setColor1(
+                color.as_ref().native(),
+                color_space.native_ptr_or_null_mut_force(),
+            )
         }
         self
     }
@@ -329,7 +338,6 @@ fn union_flags() {
     let mut paint = Paint::default();
     assert!(!paint.is_anti_alias());
     assert!(!paint.is_dither());
-    assert_eq!(paint.filter_quality(), FilterQuality::None);
     assert_eq!(paint.style(), Style::Fill);
 
     {
@@ -337,21 +345,9 @@ fn union_flags() {
 
         assert!(paint.is_anti_alias());
         assert!(!paint.is_dither());
-        assert_eq!(paint.filter_quality(), FilterQuality::None);
         assert_eq!(paint.style(), Style::Fill);
 
         paint.set_anti_alias(false);
-    }
-
-    {
-        paint.set_filter_quality(FilterQuality::High);
-
-        assert!(!paint.is_anti_alias());
-        assert!(!paint.is_dither());
-        assert_eq!(paint.filter_quality(), FilterQuality::High);
-        assert_eq!(paint.style(), Style::Fill);
-
-        paint.set_filter_quality(FilterQuality::None);
     }
 
     {
@@ -359,9 +355,19 @@ fn union_flags() {
 
         assert!(!paint.is_anti_alias());
         assert!(!paint.is_dither());
-        assert_eq!(paint.filter_quality(), FilterQuality::None);
         assert_eq!(paint.style(), Style::StrokeAndFill);
 
         paint.set_style(Style::Fill);
     }
+}
+
+#[test]
+fn set_color4f_color_space() {
+    let mut paint = Paint::default();
+    let color = Color4f::from(Color::DARK_GRAY);
+    let color_space = ColorSpace::new_srgb();
+    paint.set_color4f(&color, None);
+    paint.set_color4f(&color, &color_space);
+    let color2 = Color4f::from(Color::DARK_GRAY);
+    paint.set_color4f(color2, Some(&color_space));
 }

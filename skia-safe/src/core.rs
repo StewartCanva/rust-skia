@@ -185,6 +185,12 @@ pub use rrect::RRect;
 mod rsxform;
 pub use rsxform::*;
 
+pub mod sampling_options;
+#[allow(deprecated)]
+pub use sampling_options::{
+    CubicResampler, FilterMode, FilterOptions, MipmapMode, SamplingMode, SamplingOptions,
+};
+
 mod scalar_;
 pub use scalar_::*;
 
@@ -233,14 +239,14 @@ pub use un_pre_multiply::*;
 pub mod vertices;
 pub use vertices::Vertices;
 
-pub mod yuva_index;
-pub use yuva_index::YUVAIndex;
+pub mod yuva_info;
+pub use yuva_info::YUVAInfo;
 
-mod yuva_size_info;
-pub use yuva_size_info::*;
+pub mod yuva_pixmaps;
+pub use yuva_pixmaps::{yuva_pixmap_info, YUVAPixmapInfo, YUVAPixmaps};
 
 //
-// Skia specific traits used for overloading.
+// Skia specific traits used for overloading functions.
 //
 
 pub trait Contains<T> {

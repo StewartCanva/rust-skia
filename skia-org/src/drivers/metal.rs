@@ -3,15 +3,15 @@ use crate::drivers::DrawingDriver;
 use cocoa::foundation::NSAutoreleasePool;
 use foreign_types::ForeignType;
 use metal_rs::*;
-use skia_safe::gpu;
+use skia_safe::gpu::{self, mtl};
 use skia_safe::{Budgeted, Canvas, ImageInfo, Surface};
-use std::ffi;
 use std::path::Path;
+use std::ptr;
 
 #[allow(dead_code)]
 pub struct Metal {
     // note: ordered for drop order
-    context: gpu::Context,
+    context: gpu::DirectContext,
     queue: CommandQueue,
     device: Device,
     pool: AutoreleasePool,
@@ -26,13 +26,15 @@ impl DrawingDriver for Metal {
         let device = Device::system_default().expect("no Metal device");
         let queue = device.new_command_queue();
 
-        let context = unsafe {
-            gpu::Context::new_metal(
-                device.as_ptr() as *mut ffi::c_void,
-                queue.as_ptr() as *mut ffi::c_void,
+        let backend = unsafe {
+            mtl::BackendContext::new(
+                device.as_ptr() as mtl::Handle,
+                queue.as_ptr() as mtl::Handle,
+                ptr::null(),
             )
-        }
-        .unwrap();
+        };
+
+        let context = gpu::DirectContext::new_metal(&backend, None).unwrap();
 
         Self {
             pool,
