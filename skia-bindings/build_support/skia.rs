@@ -226,6 +226,7 @@ impl FinalBuildConfiguration {
                 ("skia_use_system_zlib", yes_if(use_system_libraries)),
                 ("skia_use_freetype", yes()),
                 ("skia_use_fonthost_mac", no()),
+                ("skia_use_freetype_woff2", yes()),
                 ("skia_use_xps", no()),
                 ("skia_use_dng_sdk", yes_if(features.dng)),
                 ("cc", quote(&build.cc)),
@@ -340,6 +341,7 @@ impl FinalBuildConfiguration {
                     // We make this explicit to avoid relying on an expat installed
                     // in the system.
                     use_expat = true;
+                    args.push(("skia_use_system_libjpeg_turbo", yes()));
                 }
                 (_, "apple", "darwin", _) => {
                     args.push(("skia_use_system_freetype2", no()));
