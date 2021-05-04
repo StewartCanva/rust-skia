@@ -284,7 +284,8 @@ impl FinalBuildConfiguration {
             }
 
             let jpeg_sys_cflags: Vec<String>;
-            if let Some(paths) = cargo::env_var("DEP_JPEG_INCLUDE") {
+            if cfg!(feature = "use-mozjpeg-sys") {
+                let paths = cargo::env_var("DEP_JPEG_INCLUDE").expect("mozjpeg-sys include path");
                 jpeg_sys_cflags = std::env::split_paths(&paths).map(|arg| {
                     format!("-I{}", arg.display())
                 }).collect();
