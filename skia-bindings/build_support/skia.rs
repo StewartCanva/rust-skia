@@ -212,7 +212,6 @@ impl FinalBuildConfiguration {
                 ("skia_use_gl", yes_if(features.gl)),
                 ("skia_use_egl", yes_if(features.egl)),
                 ("skia_use_x11", yes_if(features.x11)),
-                ("skia_use_system_libjpeg_turbo", no()),
                 ("skia_use_system_libpng", no()),
                 ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
                 ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
@@ -285,6 +284,18 @@ impl FinalBuildConfiguration {
                 cflags.push(&sysroot_arg);
             }
 
+            let jpeg_sys_cflags: Vec<String>;
+            if let Some(paths) = cargo::env_var("DEP_JPEG_INCLUDE") {
+                jpeg_sys_cflags = std::env::split_paths(&paths).map(|arg| {
+                    format!("-I{}", arg.display())
+                }).collect();
+                cflags.extend(jpeg_sys_cflags.iter().map(|x| -> &str { x.as_ref() }));
+                args.push(("skia_use_system_libjpeg_turbo", yes()));
+                cargo::add_link_lib("mozjpeg-sys");
+            } else {
+                args.push(("skia_use_system_libjpeg_turbo", no()));
+            }
+
             if let Some(opt_level) = &build.opt_level {
                 /* LTO generates corrupt libraries on the host platforms when building with --release
                 if opt_level.parse::<usize>() != Ok(0) {
@@ -334,7 +345,6 @@ impl FinalBuildConfiguration {
                     // We make this explicit to avoid relying on an expat installed
                     // in the system.
                     use_expat = true;
-                    args.push(("skia_use_system_libjpeg_turbo", yes()));
                 }
                 (_, "apple", "darwin", _) => {
                     args.push(("skia_use_system_freetype2", no()));
