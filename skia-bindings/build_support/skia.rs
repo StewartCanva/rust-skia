@@ -212,6 +212,7 @@ impl FinalBuildConfiguration {
                 ("skia_use_gl", yes_if(features.gl)),
                 ("skia_use_egl", yes_if(features.egl)),
                 ("skia_use_x11", yes_if(features.x11)),
+                ("skia_use_system_libjpeg_turbo", no()),
                 ("skia_use_system_libpng", no()),
                 ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
                 ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
