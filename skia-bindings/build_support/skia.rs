@@ -709,7 +709,7 @@ pub fn build_skia(
     ninja_command: &Path,
 ) {
     let ninja_status = Command::new(ninja_command)
-        .args(&[":skia", "-C", config.output_directory.to_str().unwrap()])
+        .args(&["-C", config.output_directory.to_str().unwrap()])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status();
