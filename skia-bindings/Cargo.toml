@@ -53,7 +53,7 @@ use-system-jpeg-turbo = ["mozjpeg-sys"]
 # deprecated since 0.25.0
 svg = []
 shaper = ["textlayout"]
-use-mozjpeg-sys = ["mozjpeg-sys"]
+use-system-jpeg-turbo = ["mozjpeg-sys"]
 
 [dependencies]
 
