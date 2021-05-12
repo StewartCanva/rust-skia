@@ -373,9 +373,6 @@ impl FinalBuildConfiguration {
                 args.push(("skia_use_expat", no()));
             }
 
-            let verbose_linking = "-Wl,--verbose";
-            cflags.push(&verbose_linking);
-
             if !cflags.is_empty() {
                 let cflags = format!(
                     "[{}]",
