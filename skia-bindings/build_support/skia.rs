@@ -295,7 +295,7 @@ impl FinalBuildConfiguration {
                 cflags.extend(jpeg_sys_cflags.iter().map(|x| -> &str { x.as_ref() }));
                 args.push(("skia_use_system_libjpeg_turbo", yes()));
             } else {
-                args.push(("skia_use_system_libjpeg_turbo", yes_if(use_system_libraries)));
+                args.push(("skia_use_system_libjpeg_turbo", no()));
             }
 
             if let Some(opt_level) = &build.opt_level {
