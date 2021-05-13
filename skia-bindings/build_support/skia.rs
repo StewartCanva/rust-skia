@@ -366,8 +366,7 @@ impl FinalBuildConfiguration {
                     args.push(("target_os", quote(skia_target_os)));
                     args.push(("target_cpu", quote(clang::target_arch(arch))));
                 }
-                ("wasm32", "unknown", "emscripten", _) | 
-                ("wasm32", "unknown", "unknown", _) => {
+                ("wasm32", "unknown", "emscripten", _) | ("wasm32", "unknown", "unknown", _) => {
                     args.push(("cc", quote("emcc")));
                     args.push(("cxx", quote("em++")));
                     args.push(("skia_enable_fontmgr_custom", yes()));
@@ -562,8 +561,7 @@ impl BinariesConfiguration {
             (_, "apple", "ios", _) => {
                 link_libraries.extend(ios::link_libraries(features));
             }
-            ("wasm32", "unknown", "emscripten", _) | 
-            ("wasm32", "unknown", "unknown", _) => {
+            ("wasm32", "unknown", "emscripten", _) | ("wasm32", "unknown", "unknown", _) => {
                 link_libraries.extend(vec!["GL"]);
             }
             _ => panic!("unsupported target: {:?}", cargo::target()),
@@ -804,11 +802,15 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         .clang_arg("-v");
 
     // wasm: blacklist due to unknown/emscripten abi incompatibilties
-    builder = builder
-        .blacklist_function("C_SkFontArguments_setVariationDesignPosition")
-        .blacklist_function("SkM44_setRotate")
-        .blacklist_function("SkM44_setRotateUnitSinCos")
-        .blacklist_function("SkFont_getPos");
+    let builder = if cfg(target_arch = "wasm32") {
+        builder
+            .blacklist_function("C_SkFontArguments_setVariationDesignPosition")
+            .blacklist_function("SkM44_setRotate")
+            .blacklist_function("SkM44_setRotateUnitSinCos")
+            .blacklist_function("SkFont_getPos");
+    } else {
+        builder
+    };
 
     // don't generate destructors on Windows: https://github.com/rust-skia/rust-skia/issues/318
     let mut builder = if cfg!(target_os = "windows") {
@@ -928,8 +930,7 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
                 builder = builder.clang_arg(arg);
             }
         }
-        ("wasm32", "unknown", "emscripten", _) | 
-        ("wasm32", "unknown", "unknown", _) => {
+        ("wasm32", "unknown", "emscripten", _) | ("wasm32", "unknown", "unknown", _) => {
             cc_build.compiler("em++");
             cc_build.flag("-fno-exceptions");
             cc_build.flag("-fno-rtti");
