@@ -802,12 +802,12 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         .clang_arg("-v");
 
     // wasm: blacklist due to unknown/emscripten abi incompatibilties
-    let builder = if cfg(target_arch = "wasm32") {
+    let builder = if cfg!(target_arch = "wasm32") {
         builder
             .blacklist_function("C_SkFontArguments_setVariationDesignPosition")
             .blacklist_function("SkM44_setRotate")
             .blacklist_function("SkM44_setRotateUnitSinCos")
-            .blacklist_function("SkFont_getPos");
+            .blacklist_function("SkFont_getPos")
     } else {
         builder
     };
