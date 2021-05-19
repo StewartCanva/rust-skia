@@ -206,9 +206,9 @@ impl FinalBuildConfiguration {
             }
 
             let mut args: Vec<(&str, String)> = vec![
-                ("is_official_build", yes_if(!build.skia_debug)),
-                ("is_debug", yes_if(build.skia_debug)),
-                ("skia_enable_gpu", yes_if(features.gpu())),
+                ("is_official_build", yes_if(!build.skia_debug)), // no
+                ("is_debug", yes_if(build.skia_debug)), // no
+                ("skia_enable_gpu", yes_if(features.gpu())), // true
                 ("skia_use_gl", yes_if(features.gl)),
                 ("skia_use_egl", yes_if(features.egl)),
                 ("skia_use_x11", yes_if(features.x11)),
@@ -225,6 +225,30 @@ impl FinalBuildConfiguration {
                 ("skia_use_dng_sdk", yes_if(features.dng)),
                 ("cc", quote(&build.cc)),
                 ("cxx", quote(&build.cxx)),
+                ("is_component_build", no()),
+                ("werror", yes()),
+                ("target_cpu", quote("wasm")),
+                ("skia_use_angle", no()),
+                ("skia_use_webgl", yes()),
+                ("skia_use_fontconfig", no()),
+                ("skia_use_libheif", yes()),
+                ("skia_use_libjpeg_turbo_decode", yes()),
+                ("skia_use_libjpeg_turbo_encode", yes()),
+                ("skia_use_libpng_decode", yes()),
+                ("skia_use_libpng_encode", yes()),
+                ("skia_use_lua", no()),
+                ("skia_use_piex", yes()),
+                // ("skia_use_system_libwebp", no()),
+                ("skia_use_vulkan", no()),
+                // ("skia_use_wuffs", yes()),
+                ("skia_use_zlib", yes()),
+                ("skia_use_expat", yes()),
+                ("skia_enable_ccpr", no()),
+                ("skia_enable_svg", yes()),
+                ("skia_enable_skshaper", yes()),
+                ("skia_enable_nvpr", no()),
+                ("skia_enable_skparagraph", yes()),
+                ("skia_enable_pdf", no()),
             ];
 
             if features.vulkan {
@@ -745,7 +769,7 @@ pub fn build_skia(
 }
 
 fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
-    let builder = bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
         .default_enum_style(EnumVariation::Rust {
@@ -948,7 +972,7 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
             builder = builder.clang_arg("--target=wasm32-unknown-emscripten");
 
             // Add C++ includes (otherwise build will fail with <cmath> not found)
-            builder = builder.clang_arg("-nobuiltininc");
+            // builder = builder.clang_arg("-nobuiltininc");
             builder = add_sys_include(builder, "lib/libc/musl/arch/emscripten");
             builder = add_sys_include(builder, "include/libcxx");
             builder = add_sys_include(builder, "include/libc");
