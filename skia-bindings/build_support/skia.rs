@@ -238,7 +238,7 @@ impl FinalBuildConfiguration {
                 ("skia_use_libpng_encode", yes()),
                 ("skia_use_lua", no()),
                 ("skia_use_piex", yes()),
-                ("skia_use_system_libwebp", no()),
+                // ("skia_use_system_libwebp", no()),
                 ("skia_use_vulkan", no()),
                 ("skia_use_wuffs", yes()),
                 ("skia_use_zlib", yes()),
