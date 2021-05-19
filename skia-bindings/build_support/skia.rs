@@ -771,7 +771,7 @@ pub fn build_skia(
 }
 
 fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
-    let builder = bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
         .default_enum_style(EnumVariation::Rust {
