@@ -971,7 +971,7 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
             builder = builder.clang_arg("--target=wasm32-unknown-emscripten");
 
             // Add C++ includes (otherwise build will fail with <cmath> not found)
-            builder = builder.clang_arg("-nobuiltininc");
+            // builder = builder.clang_arg("-nobuiltininc");
             builder = add_sys_include(builder, "lib/libc/musl/arch/emscripten");
             builder = add_sys_include(builder, "include/libcxx");
             builder = add_sys_include(builder, "include/libc");
