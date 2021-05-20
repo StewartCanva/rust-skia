@@ -954,6 +954,7 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         }
         ("wasm32", "unknown", "emscripten", _) | 
         ("wasm32", "unknown", "unknown", _) => {
+            panic!("the code got here");
             cc_build.compiler("em++");
             cc_build.flag("-fno-exceptions");
             cc_build.flag("-fno-rtti");
