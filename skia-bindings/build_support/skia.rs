@@ -357,15 +357,6 @@ impl FinalBuildConfiguration {
                     args.push(("target_cpu", quote(clang::target_arch(arch))));
                     ios::extra_skia_cflags(arch, &mut cflags);
                 }
-                (arch, _, os, _) => {
-                    let skia_target_os = match os {
-                        "darwin" => "mac",
-                        "windows" => "win",
-                        _ => os,
-                    };
-                    args.push(("target_os", quote(skia_target_os)));
-                    args.push(("target_cpu", quote(clang::target_arch(arch))));
-                }
                 ("wasm32", "unknown", "emscripten", _) | ("wasm32", "unknown", "unknown", _) => {
                     args.push(("cc", quote("emcc")));
                     args.push(("cxx", quote("em++")));
@@ -375,6 +366,15 @@ impl FinalBuildConfiguration {
                     args.push(("skia_use_system_freetype2", no()));
                     args.push(("skia_use_webgl", yes())); // yes_if(features.gpu())
                     args.push(("target_cpu", quote("wasm")));
+                }
+                (arch, _, os, _) => {
+                    let skia_target_os = match os {
+                        "darwin" => "mac",
+                        "windows" => "win",
+                        _ => os,
+                    };
+                    args.push(("target_os", quote(skia_target_os)));
+                    args.push(("target_cpu", quote(clang::target_arch(arch))));
                 }
             }
 
