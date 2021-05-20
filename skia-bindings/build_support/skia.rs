@@ -947,11 +947,6 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
                 builder = builder.clang_arg(arg);
             }
         }
-        (arch, "apple", "ios", _) => {
-            for arg in ios::additional_clang_args(arch) {
-                builder = builder.clang_arg(arg);
-            }
-        }
         ("wasm32", "unknown", "emscripten", _) | 
         ("wasm32", "unknown", "unknown", _) => {
             panic!("the code got here");
@@ -977,6 +972,11 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
             builder = add_sys_include(builder, "include/libcxx");
             builder = add_sys_include(builder, "include/libc");
             builder = add_sys_include(builder, "include");
+        }
+        (arch, "apple", "ios", _) => {
+            for arg in ios::additional_clang_args(arch) {
+                builder = builder.clang_arg(arg);
+            }
         }
         _ => {}
     }
