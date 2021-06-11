@@ -20,7 +20,7 @@ edition = "2018"
 doctest = false
 
 [features]
-default = ["binary-cache"]
+default = []
 gl = ["gpu", "skia-bindings/gl"]
 egl = ["gl", "skia-bindings/egl"]
 x11 = ["gl", "skia-bindings/x11"]
