@@ -686,7 +686,7 @@ pub fn configure_skia(
             config.output_directory.to_str().unwrap(),
             "-v",
             &format!("--script-executable={}", python2.to_str().unwrap()),
-            &format!("--args={}", gn_args),
+            &format!("--args={} -v", gn_args),
         ])
         .envs(env::vars())
         .current_dir(&build.skia_source_dir)
