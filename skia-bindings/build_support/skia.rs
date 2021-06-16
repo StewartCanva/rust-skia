@@ -684,6 +684,7 @@ pub fn configure_skia(
         .args(&[
             "gen",
             config.output_directory.to_str().unwrap(),
+            "-v",
             &format!("--script-executable={}", python2.to_str().unwrap()),
             &format!("--args={}", gn_args),
         ])
