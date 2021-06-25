@@ -50,6 +50,7 @@ webp-encode = []
 webp-decode = []
 # sys libraries
 use-system-jpeg-turbo = ["mozjpeg-sys"]
+
 # deprecated since 0.25.0
 svg = []
 shaper = ["textlayout"]

@@ -356,9 +356,12 @@ impl FinalBuildConfiguration {
                     // in the system.
                     use_expat = true;
                 }
-                (_, "apple", "darwin", _) => {
+                (arch, _, "darwin", _) => {
                     args.push(("skia_use_system_freetype2", no()));
                     args.push(("skia_enable_fontmgr_custom_empty", yes()));
+                    args.push(("target_os", quote("mac")));
+                    args.push(("target_cpu", quote(clang::target_arch(arch))));
+                    set_target = false;
                 }
                 (arch, _, "ios", _) => {
                     args.push(("target_os", quote("ios")));
