@@ -216,10 +216,6 @@ impl FinalBuildConfiguration {
                 ("skia_use_gl", yes_if(features.gl)),
                 ("skia_use_egl", yes_if(features.egl)),
                 ("skia_use_x11", yes_if(features.x11)),
-                (
-                    "skia_use_system_libjpeg_turbo",
-                    yes_if(use_system_libraries),
-                ),
                 ("skia_use_system_libpng", yes_if(use_system_libraries)),
                 ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
                 ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
@@ -303,7 +299,10 @@ impl FinalBuildConfiguration {
                 cflags.extend(jpeg_sys_cflags.iter().map(|x| -> &str { x.as_ref() }));
                 args.push(("skia_use_system_libjpeg_turbo", yes()));
             } else {
-                args.push(("skia_use_system_libjpeg_turbo", no()));
+                args.push((
+                    "skia_use_system_libjpeg_turbo",
+                    yes_if(use_system_libraries),
+                ));
             }
 
             if let Some(opt_level) = &build.opt_level {
@@ -520,7 +519,9 @@ impl BinariesConfiguration {
         let feature_ids = features.ids();
 
         if features.text_layout {
-            additional_files.push(ICUDTL_DAT.into());
+            if target.is_windows() {
+                additional_files.push(ICUDTL_DAT.into());
+            }
             built_libraries.push(lib::SK_PARAGRAPH.into());
             built_libraries.push(lib::SK_SHAPER.into());
         }
@@ -769,12 +770,14 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         .blocklist_type("GrImageContextPriv")
         .raw_line("pub enum GrContextThreadSafeProxy {}")
         .blocklist_type("GrContextThreadSafeProxy")
-        .raw_line("pub enum GrContextThreadSafeProxyPriv {}")
         .blocklist_type("GrContextThreadSafeProxyPriv")
-        .raw_line("pub enum GrRecordingContextPriv {}")
+        .raw_line("pub enum GrContextThreadSafeProxyPriv {}")
         .blocklist_type("GrRecordingContextPriv")
-        .raw_line("pub enum GrContextPriv {}")
+        .raw_line("pub enum GrRecordingContextPriv {}")
+        .blocklist_function("GrRecordingContext_priv.*")
+        .blocklist_function("GrDirectContext_priv.*")
         .blocklist_type("GrContextPriv")
+        .raw_line("pub enum GrContextPriv {}")
         .blocklist_function("GrContext_priv.*")
         .blocklist_function("SkDeferredDisplayList_priv.*")
         .raw_line("pub enum SkVerticesPriv {}")
@@ -784,7 +787,9 @@ fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
         // Vulkan reexports that got swallowed by making them opaque.
         // (these can not be allowlisted by a extern "C" function)
         .allowlist_type("VkPhysicalDeviceFeatures")
-        .allowlist_type("VkPhysicalDeviceFeatures2")
+        .allowlist_type("VkPhysicalDeviceFeatures2").
+        // m91: These functions are not actually implemented.
+        blocklist_function("SkCustomTypefaceBuilder_setGlyph[123].*")
         // misc
         .allowlist_var("SK_Color.*")
         .allowlist_var("kAll_GrBackendState")
