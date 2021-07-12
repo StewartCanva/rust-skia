@@ -20,7 +20,8 @@ edition = "2018"
 doctest = false
 
 [features]
-default = ["binary-cache"]
+# Cargo raze doesn't seem to support --no-default-features
+default = []
 gl = ["gpu", "skia-bindings/gl"]
 egl = ["gl", "skia-bindings/egl"]
 x11 = ["gl", "skia-bindings/x11"]

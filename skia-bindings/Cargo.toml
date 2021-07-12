@@ -36,7 +36,8 @@ skia = "m91-0.39.4"
 depot_tools = "fade894"
 
 [features]
-default = ["binary-cache"]
+# Cargo raze doesn't seem to support --no-default-features
+default = []
 gl = []
 egl = []
 wayland = []

@@ -64,6 +64,7 @@ impl FinalBuildConfiguration {
 }
 
 pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
+    std::env::set_current_dir(PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("skia-bindings")).unwrap();
     let builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
