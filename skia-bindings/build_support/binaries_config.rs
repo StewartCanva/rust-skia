@@ -164,12 +164,6 @@ impl BinariesConfiguration {
         self.copy_libs_and_additional_files(from_dir, output_directory, import_bindings_libraries)
     }
 
-    /// Export library and additional files from the output directory to a `to_dir`.
-    pub fn export(&self, to_dir: &Path) -> io::Result<()> {
-        let output_directory = &self.output_directory;
-        self.copy_libs_and_additional_files(output_directory, to_dir, true)
-    }
-
     fn copy_libs_and_additional_files(
         &self,
         from_dir: &Path,

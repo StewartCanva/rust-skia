@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 pub mod env {
     use crate::build_support::cargo;
 
+    pub fn bindings_path() -> String {
+        String::from(std::env::var("OUT_DIR").unwrap()) + "/bindings.rs"
+    }    
+
     pub fn skia_lib_definitions() -> Option<String> {
         cargo::env_var("SKIA_BUILD_DEFINES")
     }
@@ -64,7 +68,7 @@ impl FinalBuildConfiguration {
 }
 
 pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
-    std::env::set_current_dir(PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("skia-bindings")).unwrap();
+    // std::env::set_current_dir(PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("skia-bindings")).unwrap();
     let builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
@@ -73,12 +77,6 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         })
         .size_t_is_usize(true)
         .parse_callbacks(Box::new(ParseCallbacks))
-        .raw_line("#![allow(clippy::all)]")
-        // https://github.com/rust-lang/rust-bindgen/issues/1651
-        .raw_line("#![allow(unknown_lints)]")
-        .raw_line("#![allow(deref_nullptr)]")
-        // GrVkBackendContext contains u128 fields on macOS
-        .raw_line("#![allow(improper_ctypes)]")
         .allowlist_function("C_.*")
         .constified_enum(".*Mask")
         .constified_enum(".*Flags")
@@ -255,9 +253,8 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
     println!("GENERATING BINDINGS");
     let bindings = builder.generate().expect("Unable to generate bindings");
 
-    let out_path = PathBuf::from("src");
     bindings
-        .write_to_file(out_path.join("bindings.rs"))
+        .write_to_file(env::bindings_path())
         .expect("Couldn't write bindings!");
 }
 
