@@ -35,7 +35,9 @@ impl FinalBuildConfiguration {
         definitions: Definitions,
         skia_source_dir: &Path,
     ) -> FinalBuildConfiguration {
-        let binding_sources = {
+        let binding_sources = if let Some(sources) = cargo::env_var("SKIA_BINDINGS_SOURCE_FILES") {
+            sources.split(' ').map(PathBuf::from).collect()
+        } else {
             let mut sources: Vec<PathBuf> = vec!["src/bindings.cpp".into()];
             if features.gl {
                 sources.push("src/gl.cpp".into());
@@ -57,7 +59,7 @@ impl FinalBuildConfiguration {
             }
             sources.push("src/svg.cpp".into());
 
-            // Bazel will work better with an absolute path, because it runs in a different working directory.
+            // Maybe this isn't needed, but just in case.
             if let Some(path) = cargo::env_var("CARGO_MANIFEST_DIR") {
                 let path = PathBuf::from(path);
                 for source in sources.iter_mut() {
