@@ -56,6 +56,15 @@ impl FinalBuildConfiguration {
                 sources.extend(vec!["src/shaper.cpp".into(), "src/paragraph.cpp".into()]);
             }
             sources.push("src/svg.cpp".into());
+
+            // Bazel will work better with an absolute path, because it runs in a different working directory.
+            if let Some(path) = cargo::env_var("CARGO_MANIFEST_DIR") {
+                let path = PathBuf::from(path);
+                for source in sources.iter_mut() {
+                    *source = path.join(&*source);
+                }
+            }
+
             sources
         };
 
@@ -68,7 +77,6 @@ impl FinalBuildConfiguration {
 }
 
 pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
-    // std::env::set_current_dir(PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("skia-bindings")).unwrap();
     let builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
