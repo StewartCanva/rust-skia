@@ -3,7 +3,7 @@
 
 use crate::{
     SkBlendMode, SkBlurStyle, SkCanvas_Lattice_RectType, SkClipOp, SkPaint_Cap, SkPaint_Join,
-    SkPathDirection, SkTileMode, SkYUVColorSpace,
+    SkParsePath_PathEncoding, SkPathDirection, SkTileMode, SkYUVColorSpace,
 };
 
 impl Default for SkBlendMode {
@@ -61,6 +61,12 @@ impl Default for SkTileMode {
     }
 }
 
+impl Default for SkParsePath_PathEncoding {
+    fn default() -> Self {
+        SkParsePath_PathEncoding::Absolute
+    }
+}
+
 #[cfg(feature = "textlayout")]
 pub mod textlayout {
     impl Default for crate::skia_textlayout_Affinity {
@@ -87,6 +93,9 @@ pub mod textlayout {
         }
     }
 
+    // TODO: Remove as soon we are building with Rust stable >= 1.57
+    #[allow(unknown_lints)]
+    #[allow(clippy::derivable_impls)]
     impl Default for crate::skia_textlayout_PositionWithAffinity {
         fn default() -> Self {
             Self {

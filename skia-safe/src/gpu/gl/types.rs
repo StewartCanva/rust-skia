@@ -1,12 +1,15 @@
+use crate::gpu;
 use crate::prelude::*;
-use skia_bindings::{self as sb, GrGLFramebufferInfo, GrGLTextureInfo};
+use skia_bindings::{self as sb, GrGLFramebufferInfo, GrGLSurfaceInfo, GrGLTextureInfo};
 
 pub use skia_bindings::GrGLFormat as Format;
+variant_name!(Format::ALPHA8, format_naming);
 pub use skia_bindings::GrGLStandard as Standard;
+variant_name!(Standard::GLES, standard_naming);
 pub use skia_bindings::GrGLenum as Enum;
 pub use skia_bindings::GrGLuint as UInt;
 
-#[derive(Copy, Clone, Eq, Debug)]
+#[derive(Copy, Clone, Eq, Default, Debug)]
 #[repr(C)]
 pub struct TextureInfo {
     pub target: Enum,
@@ -14,22 +17,11 @@ pub struct TextureInfo {
     pub format: Enum,
 }
 
-impl NativeTransmutable<GrGLTextureInfo> for TextureInfo {}
+native_transmutable!(GrGLTextureInfo, TextureInfo, text_info_layout);
 
 impl PartialEq for TextureInfo {
     fn eq(&self, other: &Self) -> bool {
         unsafe { sb::C_GrGLTextureInfo_Equals(self.native(), other.native()) }
-    }
-}
-
-// TODO: does this make sense?
-impl Default for TextureInfo {
-    fn default() -> Self {
-        TextureInfo {
-            target: 0,
-            id: 0,
-            format: 0,
-        }
     }
 }
 
@@ -43,27 +35,47 @@ impl TextureInfo {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
 #[repr(C)]
 pub struct FramebufferInfo {
     pub fboid: UInt,
     pub format: Enum,
 }
 
-impl NativeTransmutable<GrGLFramebufferInfo> for FramebufferInfo {}
-
-impl Default for FramebufferInfo {
-    fn default() -> Self {
-        FramebufferInfo {
-            fboid: 0,
-            format: 0,
-        }
-    }
-}
+native_transmutable!(
+    GrGLFramebufferInfo,
+    FramebufferInfo,
+    framebuffer_info_layout
+);
 
 impl FramebufferInfo {
     pub fn from_fboid(fboid: UInt) -> Self {
         Self { fboid, format: 0 }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
+pub struct SurfaceInfo {
+    pub sample_count: u32,
+    pub level_count: u32,
+    pub protected: gpu::Protected,
+
+    pub target: Enum,
+    pub format: Enum,
+}
+
+native_transmutable!(GrGLSurfaceInfo, SurfaceInfo, surface_info_layout);
+
+impl Default for SurfaceInfo {
+    fn default() -> Self {
+        Self {
+            sample_count: 1,
+            level_count: 0,
+            protected: gpu::Protected::No,
+            target: 0,
+            format: 0,
+        }
     }
 }
 
@@ -87,19 +99,7 @@ bitflags! {
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::NativeTransmutable;
-
-    use super::{Enum, Format, Standard};
-
-    #[test]
-    fn test_standard_naming() {
-        let _ = Standard::GLES;
-    }
-
-    #[test]
-    fn test_format_naming() {
-        let _ = Format::COMPRESSED_ETC1_RGB8;
-    }
+    use super::{Enum, Format};
 
     #[test]
     fn test_support_from_format_to_enum_and_back() {
@@ -149,15 +149,5 @@ mod tests {
     fn test_format_last_color_and_last_exists() {
         let _ = Format::Last;
         let _ = Format::LastColorFormat;
-    }
-
-    #[test]
-    fn test_texture_info_layout() {
-        super::TextureInfo::test_layout()
-    }
-
-    #[test]
-    fn test_framebuffer_info_layout() {
-        super::FramebufferInfo::test_layout()
     }
 }

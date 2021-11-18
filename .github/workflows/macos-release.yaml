@@ -12,9 +12,10 @@ concurrency:
 
 jobs:
   macos-release-release:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     
     steps:
     - uses: actions/checkout@v2
@@ -93,7 +94,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features '
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -165,7 +238,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -237,7 +310,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -249,9 +322,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-gl:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     
     steps:
     - uses: actions/checkout@v2
@@ -330,7 +404,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features gl'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "gl" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "gl" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "gl" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "gl" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -402,7 +548,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -474,7 +620,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -486,9 +632,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-vulkan:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     
     steps:
     - uses: actions/checkout@v2
@@ -567,7 +714,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features vulkan'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "vulkan" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "vulkan" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "vulkan" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "vulkan" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -639,7 +858,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -711,7 +930,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -723,9 +942,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-textlayout:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     
     steps:
     - uses: actions/checkout@v2
@@ -804,7 +1024,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features textlayout'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "textlayout" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "textlayout" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "textlayout" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "textlayout" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -876,7 +1168,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -948,7 +1240,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -960,9 +1252,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-gl-textlayout:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     
     steps:
     - uses: actions/checkout@v2
@@ -1041,7 +1334,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features gl,textlayout'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "gl,textlayout" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "gl,textlayout" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "gl,textlayout" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "gl,textlayout" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1113,7 +1478,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1185,7 +1550,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1197,9 +1562,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-vulkan-textlayout:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     
     steps:
     - uses: actions/checkout@v2
@@ -1278,7 +1644,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features vulkan,textlayout'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "vulkan,textlayout" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "vulkan,textlayout" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "vulkan,textlayout" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "vulkan,textlayout" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1350,7 +1788,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1422,7 +1860,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1434,9 +1872,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-gl-vulkan-textlayout:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     
     steps:
     - uses: actions/checkout@v2
@@ -1515,7 +1954,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features gl,vulkan,textlayout'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "gl,vulkan,textlayout" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "gl,vulkan,textlayout" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "gl,vulkan,textlayout" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "gl,vulkan,textlayout" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1587,7 +2098,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1659,7 +2170,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1671,9 +2182,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-metal:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.14'
     
     steps:
     - uses: actions/checkout@v2
@@ -1752,7 +2264,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features metal'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "metal" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "metal" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "metal" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "metal" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1824,7 +2408,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1896,7 +2480,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -1908,9 +2492,10 @@ jobs:
         token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
         prerelease: true
   macos-release-release-metal-textlayout:
-    runs-on: macOS-10.15
-    env: 
+    runs-on: macos-11
+    env:
       SKIA_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '10.14'
     
     steps:
     - uses: actions/checkout@v2
@@ -1989,7 +2574,79 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
+      with:
+        owner: rust-skia
+        repo: skia-binaries
+        allowUpdates: true
+        replacesArtifacts: true
+        tag: '${{ env.SKIA_BINARIES_TAG }}'
+        artifacts: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+        artifactErrorsFailBuild: true
+        token: ${{ secrets.RUST_SKIA_RELEASE_TOKEN }}
+        prerelease: true
+    - name: 'Install Rust target aarch64-apple-darwin'
+      shell: bash
+      run: |
+        rustup target add aarch64-apple-darwin
+    
+    - name: 'Build all targets in skia-safe for aarch64-apple-darwin with features metal,textlayout'
+      shell: bash
+      run: |
+        if [ "false" == "true" ]; then
+          TARGET=aarch64-apple-darwin
+          TARGET=${TARGET//-/_}
+          export CC_${TARGET}=aarch64-apple-darwin26-clang
+          export CXX_${TARGET}=aarch64-apple-darwin26-clang++
+          TARGET_UPPERCASE=`echo "${TARGET}" | tr [a-z] [A-Z]`
+          export CARGO_TARGET_${TARGET_UPPERCASE}_LINKER=aarch64-apple-darwin26-clang
+          echo "Set CC, CXX, and CARGO_LINKER target specific environment variables for Android"
+        fi
+        cargo clean
+        cargo build -p skia-safe --all-targets --release --features "metal,textlayout" --target aarch64-apple-darwin
+        echo "SKIA_BINARIES_TAG=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/tag.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_BINARIES_KEY=$(cat "${BUILD_ARTIFACTSTAGINGDIRECTORY}/skia-binaries/key.txt")" >> ${GITHUB_ENV}
+        echo "SKIA_STAGING_PATH=${BUILD_ARTIFACTSTAGINGDIRECTORY}" >> ${GITHUB_ENV}
+      env:
+        BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}
+    
+    - name: 'Run Clippy'
+      shell: bash
+      if: false
+      run: |
+        cargo clippy --release --features "metal,textlayout" --all-targets --target aarch64-apple-darwin -- -D warnings
+    
+    - name: 'Test all workspace projects'
+      shell: bash
+      if: false
+      run: |
+        cargo test --all --release --features "metal,textlayout" --all-targets --target aarch64-apple-darwin -- --nocapture
+      
+    - name: 'Generate skia-org example images'
+      shell: bash
+      if: false
+      run: |
+        cargo run --release --features "metal,textlayout" --target aarch64-apple-darwin "${{ env.SKIA_STAGING_PATH }}/skia-org" 
+    
+    - name: 'Upload skia-org example images'
+      if: false
+      uses: actions/upload-artifact@v2
+      with:
+        name: skia-org-images-aarch64-apple-darwin
+        path: ${{ env.SKIA_STAGING_PATH }}/skia-org
+    
+    - name: 'Compress binaries'
+      if: true
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        cwd: '${{ env.SKIA_STAGING_PATH }}'
+        files: 'skia-binaries'
+        outPath: '${{ runner.temp }}/skia-binaries-${{ env.SKIA_BINARIES_KEY }}.tar.gz'
+    
+    - name: 'Release binaries'
+      if: true
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -2061,7 +2718,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries
@@ -2133,7 +2790,7 @@ jobs:
     
     - name: 'Release binaries'
       if: true
-      uses: ncipollo/release-action@v1
+      uses: pragmatrix/release-action@exp
       with:
         owner: rust-skia
         repo: skia-binaries

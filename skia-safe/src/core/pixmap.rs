@@ -6,8 +6,7 @@ use skia_bindings::{self as sb, SkPixmap};
 use std::{convert::TryInto, ffi::c_void, fmt, mem, os::raw, ptr, slice};
 
 pub type Pixmap = Handle<SkPixmap>;
-unsafe impl Send for Pixmap {}
-unsafe impl Sync for Pixmap {}
+unsafe_send_sync!(Pixmap);
 
 impl NativeDrop for SkPixmap {
     fn drop(&mut self) {
@@ -286,9 +285,14 @@ impl Pixmap {
 }
 
 /// Implement this trait to use a pixel type in [`Handle<Pixmap>::pixels()`].
+///
+/// # Safety
+///
+/// This trait is unsafe because external [`Pixel`] implementations may lie about their
+/// [`ColorType`] or fail to match the alignment of the pixels stored in [`Handle<Pixmap>`].
 pub unsafe trait Pixel: Copy {
     /// `true` if the type matches the color type's format.
-    fn matches_color_type(_ct: ColorType) -> bool;
+    fn matches_color_type(ct: ColorType) -> bool;
 }
 
 unsafe impl Pixel for u8 {

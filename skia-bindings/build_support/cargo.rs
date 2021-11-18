@@ -14,21 +14,21 @@ pub fn output_directory() -> PathBuf {
     PathBuf::from(env::var("OUT_DIR").unwrap())
 }
 
-pub fn rerun_if_changed(path: impl AsRef<Path>) {
+pub fn rerun_if_file_changed(path: impl AsRef<Path>) {
     println!("cargo:rerun-if-changed={}", path.as_ref().to_str().unwrap());
 }
 
 /// Returns the value of an environment variable and notify cargo that the build
-/// should rereun if it changes.
+/// should re-run if it changes.
 pub fn env_var(name: impl AsRef<str>) -> Option<String> {
     let name = name.as_ref();
-    rerun_if_env_changed(name);
+    rerun_if_env_var_changed(name);
     env::var(name).ok()
 }
 
 /// Notify cargo that it should rerun the build if the environment
 /// variable changes.
-pub fn rerun_if_env_changed(name: impl AsRef<str>) {
+pub fn rerun_if_env_var_changed(name: impl AsRef<str>) {
     println!("cargo:rerun-if-env-changed={}", name.as_ref())
 }
 
@@ -126,9 +126,7 @@ pub fn host() -> Target {
 fn parse_target(target_str: impl AsRef<str>) -> Target {
     let target_str = target_str.as_ref();
     let target: Vec<String> = target_str.split('-').map(|s| s.into()).collect();
-    if target.len() < 3 {
-        panic!("Failed to parse TARGET {}", target_str);
-    }
+    assert!(target.len() >= 3, "Failed to parse TARGET {}", target_str);
 
     let abi = if target.len() > 3 {
         Some(target[3].clone())
@@ -178,8 +176,7 @@ pub fn package_version() -> String {
     env::var("CARGO_PKG_VERSION").unwrap().as_str().into()
 }
 
-/// Parses Cargo.toml and returns the metadadata specifed in the
-/// [package.metadata] section.
+/// Parses Cargo.toml and returns the metadata specified in the [package.metadata] section.
 pub fn get_metadata() -> Vec<(String, String)> {
     use toml::{de, value};
 
