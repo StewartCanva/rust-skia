@@ -9,6 +9,9 @@ pub struct MacOs;
 
 impl PlatformDetails for MacOs {
     fn gn_args(&self, _config: &BuildConfiguration, builder: &mut GnArgsBuilder) {
+        builder.arg("skia_use_system_freetype2", no());
+        builder.arg("skia_enable_fontmgr_custom_empty", yes());
+
         // Skia will take care to set a specific `--target` for the current macOS version. So we
         // don't push another target `--target` that may conflict.
         builder.target(None);
