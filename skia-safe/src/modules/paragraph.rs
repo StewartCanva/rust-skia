@@ -32,6 +32,9 @@ pub use text_style::*;
 mod typeface_font_provider;
 pub use typeface_font_provider::*;
 
+mod lazy_typeface_font_provider;
+pub use lazy_typeface_font_provider::*;
+
 /// Efficient reference type to a C++ vector of font family SkStrings.
 ///
 /// Use indexer or .iter() to access the Rust str references.
