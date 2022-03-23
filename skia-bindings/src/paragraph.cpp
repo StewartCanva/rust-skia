@@ -374,3 +374,13 @@ extern "C" {
         return self->registerTypeface(sk_sp<SkTypeface>(typeface));
     }
 }
+
+extern "C" {
+    LazyTypefaceFontProvider* C_LazyTypefaceFontProvider_new() {
+        return new LazyTypefaceFontProvider();
+    }
+
+    size_t C_LazyTypefaceFontProvider_registerTypeface(LazyTypefaceFontProvider* self, const SkString* fontFilePath, const SkString* alias) {
+        return self->registerTypeface(*fontFilePath, *alias);
+    }
+}

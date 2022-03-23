@@ -61,10 +61,11 @@ impl LazyTypefaceFontProvider {
         alias: impl AsRef<str>,
     ) -> usize {
         unsafe {
+            let font_file_path = interop::String::from_str(font_file_path.as_ref());
             let alias = interop::String::from_str(alias.as_ref());
-            sb::C_TypefaceFontProvider_registerTypeface(
+            sb::C_LazyTypefaceFontProvider_registerTypeface(
                 self.native_mut(),
-                font_file_path.into_ptr(),
+                font_file_path.native(),
                 alias.native(),
             )
         }
