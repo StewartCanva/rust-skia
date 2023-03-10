@@ -1,9 +1,5 @@
 pub mod pdf {
-    use crate::{
-        interop::{self, AsStr, DynamicMemoryWStream, SetStr},
-        prelude::*,
-        scalar, DateTime, Document,
-    };
+    use crate::{interop::{self, AsStr, DynamicMemoryWStream, SetStr}, prelude::*, scalar, DateTime, Document, Canvas};
     use skia_bindings::{
         self as sb, SkPDF_AttributeList, SkPDF_Metadata, SkPDF_StructureElementNode,
     };
@@ -264,6 +260,12 @@ pub mod pdf {
     }
 
     // TODO: SetNodeId
+
+    pub fn set_node_id(canvas: &mut Canvas, node_id: i32) {
+        unsafe {
+            sb::C_SkPDF_SetNodeId(canvas.native_mut(), node_id);
+        }
+    }
 
     pub fn new_document(metadata: Option<&Metadata>) -> Document {
         let mut md = InternalMetadata::default();

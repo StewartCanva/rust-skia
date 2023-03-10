@@ -2666,6 +2666,10 @@ extern "C" void C_SkPDF_Metadata_destruct(SkPDF::Metadata* self) {
     self->~Metadata();
 }
 
+extern "C" void C_SkPDF_SetNodeId(SkCanvas* canvas, int nodeId) {
+    SkPDF::SetNodeId(canvas, nodeId);
+}
+
 extern "C" SkDocument* C_SkPDF_MakeDocument(SkWStream* stream, const SkPDF::Metadata* metadata) {
     return SkPDF::MakeDocument(stream, *metadata).release();
 }
