@@ -87,7 +87,7 @@ mod core {
     assert_impl_all!(Picture: Send, Sync);
     assert_not_impl_any!(PictureRecorder: Send, Sync);
     assert_impl_all!(PixelRef: Send, Sync);
-    assert_impl_all!(Pixmap: Send, Sync);
+    assert_not_impl_any!(Pixmap: Send, Sync);
     assert_impl_all!(Region: Send, Sync);
     assert_not_impl_any!(region::Iterator: Send, Sync);
     assert_not_impl_any!(region::Cliperator: Send, Sync);
@@ -137,7 +137,7 @@ mod docs {
 }
 
 mod effects {
-    use skia_safe::{image_filters, runtime_effect, RuntimeEffect};
+    use skia_safe::{gradient_shader, image_filters, runtime_effect, RuntimeEffect};
     use static_assertions::*;
 
     assert_impl_all!(runtime_effect::Uniform: Send, Sync);
@@ -147,6 +147,7 @@ mod effects {
     assert_impl_all!(runtime_effect::Options: Send, Sync);
     assert_impl_all!(image_filters::CropRect: Send, Sync);
     assert_impl_all!(image_filters::Dither: Send, Sync);
+    assert_impl_all!(gradient_shader::Interpolation: Send, Sync);
 }
 
 #[cfg(feature = "gpu")]
@@ -168,6 +169,8 @@ mod gpu {
     // gpu/yuva_backend_textures.rs
     assert_impl_all!(YUVABackendTextureInfo: Send, Sync);
     assert_impl_all!(YUVABackendTextures: Send, Sync);
+    assert_impl_all!(MutableTextureState: Send, Sync);
+    assert_impl_all!(BackendApi: Send, Sync);
 
     #[cfg(feature = "gl")]
     mod gl {
@@ -178,6 +181,7 @@ mod gpu {
         assert_not_impl_any!(Interface: Send, Sync);
         assert_impl_all!(TextureInfo: Send, Sync);
         assert_impl_all!(FramebufferInfo: Send, Sync);
+        assert_impl_all!(SurfaceInfo: Send, Sync);
     }
 
     #[cfg(feature = "metal")]
@@ -185,6 +189,7 @@ mod gpu {
         use skia_safe::gpu::mtl::*;
         use static_assertions::*;
         assert_impl_all!(TextureInfo: Send, Sync);
+        assert_impl_all!(SurfaceInfo: Send, Sync);
         assert_impl_all!(BackendContext: Send, Sync);
     }
 
@@ -203,6 +208,7 @@ mod gpu {
         // GetProc could be Send & Sync , but does it make sense (it's already Copy & Clone)
         assert_not_impl_any!(GetProcOf: Send, Sync);
         assert_impl_all!(DrawableInfo: Send, Sync);
+        assert_impl_all!(SurfaceInfo: Send, Sync);
         assert_impl_all!(BackendDrawableInfo: Send, Sync);
         // Note that we can't make most of vk.rs re-export of native Vulkan types Send nor Sync,
         // because they are just re-exports of simple pointers, which already implement
@@ -218,6 +224,7 @@ mod gpu {
         assert_not_impl_any!(BackendContext: Sync);
         assert_impl_all!(TextureResourceInfo: Send, Sync);
         assert_impl_all!(FenceInfo: Send, Sync);
+        assert_impl_all!(SurfaceInfo: Send, Sync);
         assert_impl_all!(Alloc: Send, Sync);
         assert_impl_all!(MemoryAllocator: Send, Sync);
     }
@@ -233,6 +240,8 @@ mod textlayout {
     // ParagraphCache seems to be fully thread safe, but I don't think it is itself meant to be shared between threads.
     assert_not_impl_any!(ParagraphCache: Send, Sync);
     assert_impl_all!(Paragraph: Send, Sync);
+    assert_impl_all!(paragraph::FontInfo: Send, Sync);
+    assert_impl_all!(paragraph::GlyphClusterInfo: Send, Sync);
     assert_impl_all!(ParagraphBuilder: Send, Sync);
     assert_impl_all!(StrutStyle: Send, Sync);
     assert_impl_all!(TextShadow: Send, Sync);
@@ -242,6 +251,7 @@ mod textlayout {
     assert_impl_all!(TextStyle: Send, Sync);
     assert_impl_all!(Block: Send, Sync);
     assert_impl_all!(Placeholder: Send, Sync);
+    assert_impl_all!(FontArguments: Send, Sync);
     assert_not_impl_any!(TypefaceFontStyleSet: Send, Sync);
     assert_not_impl_any!(TypefaceFontProvider: Send, Sync);
     assert_not_impl_any!(FontFamilies: Send, Sync);
@@ -270,6 +280,15 @@ mod svg {
     use skia_safe::svg::*;
     use static_assertions::*;
     assert_not_impl_any!(Canvas: Send, Sync);
+}
+
+#[cfg(feature = "svg")]
+mod render_svg {
+    use skia_safe::svg::*;
+    use static_assertions::*;
+
+    assert_impl_all!(Dom: Send, Sync);
+    assert_impl_all!(LoadError: Send, Sync);
 }
 
 mod utils {

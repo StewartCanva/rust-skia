@@ -1,6 +1,5 @@
 //! Full build support for the SkiaBindings library, and bindings.rs file.
-
-use crate::build_support::{android, binaries_config, cargo, features, ios, xcode};
+use crate::build_support::{binaries_config, cargo, cargo::Target, features, platform};
 use bindgen::{CodegenConfig, EnumVariation, RustTarget};
 use cc::Build;
 use std::path::{Path, PathBuf};
@@ -14,7 +13,7 @@ pub mod env {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct FinalBuildConfiguration {
+pub struct Configuration {
     /// The binding source files to compile.
     pub binding_sources: Vec<PathBuf>,
 
@@ -25,12 +24,12 @@ pub struct FinalBuildConfiguration {
     pub definitions: Definitions,
 }
 
-impl FinalBuildConfiguration {
-    pub fn from_build_configuration(
+impl Configuration {
+    pub fn new(
         features: &features::Features,
         definitions: Definitions,
         skia_source_dir: &Path,
-    ) -> FinalBuildConfiguration {
+    ) -> Self {
         let binding_sources = {
             let mut sources: Vec<PathBuf> = vec!["src/bindings.cpp".into()];
             if features.gl {
@@ -51,11 +50,16 @@ impl FinalBuildConfiguration {
             if features.text_layout {
                 sources.extend(vec!["src/shaper.cpp".into(), "src/paragraph.cpp".into()]);
             }
-            sources.push("src/svg.cpp".into());
+            if features.svg {
+                sources.push("src/svg.cpp".into());
+            }
+            if features.webp_encode {
+                sources.push("src/webp-encode.cpp".into());
+            }
             sources
         };
 
-        FinalBuildConfiguration {
+        Self {
             skia_source_dir: skia_source_dir.into(),
             binding_sources,
             definitions,
@@ -63,7 +67,12 @@ impl FinalBuildConfiguration {
     }
 }
 
-pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
+pub fn generate_bindings(
+    build: &Configuration,
+    output_directory: &Path,
+    target: Target,
+    sysroot: Option<&str>,
+) {
     let mut builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
@@ -72,12 +81,6 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         })
         .size_t_is_usize(true)
         .parse_callbacks(Box::new(ParseCallbacks))
-        .raw_line("#![allow(clippy::all)]")
-        // https://github.com/rust-lang/rust-bindgen/issues/1651
-        .raw_line("#![allow(unknown_lints)]")
-        .raw_line("#![allow(deref_nullptr)]")
-        // GrVkBackendContext contains u128 fields on macOS
-        .raw_line("#![allow(improper_ctypes)]")
         .allowlist_function("C_.*")
         .constified_enum(".*Mask")
         .constified_enum(".*Flags")
@@ -119,6 +122,11 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         .allowlist_type("VkPhysicalDeviceFeatures2").
         // m91: These functions are not actually implemented.
         blocklist_function("SkCustomTypefaceBuilder_setGlyph[123].*")
+        // m113: `SkUnicode` pulls in an impl block that forwards static functions that may not be
+        // linked into the final executable.
+        .blocklist_type("SkUnicode")
+        .raw_line("pub enum SkUnicode {}")
+
         // misc
         .allowlist_var("SK_Color.*")
         .allowlist_var("kAll_GrBackendState")
@@ -127,9 +135,8 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         .clang_args(&["-x", "c++"])
         .clang_arg("-v");
 
-    let target = cargo::target();
-
-    // Don't generate destructors for Windows targets: https://github.com/rust-skia/rust-skia/issues/318
+    // Don't generate destructors for Windows targets:
+    // <https://github.com/rust-skia/rust-skia/issues/318>
     if target.is_windows() {
         builder = builder.with_codegen_config({
             let mut config = CodegenConfig::default();
@@ -139,7 +146,7 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
     }
 
     // 32-bit Windows needs `thiscall` support.
-    // https://github.com/rust-skia/rust-skia/issues/540
+    // <https://github.com/rust-skia/rust-skia/issues/540>
     if target.is_windows() && target.architecture == "i686" {
         builder = builder.rust_target(RustTarget::Nightly);
     }
@@ -165,105 +172,96 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         builder = builder.header(source);
     }
 
+    let mut bindgen_args = Vec::new();
+    let mut cc_defines = Vec::new();
+    let mut cc_args = Vec::new();
+
     let include_path = &build.skia_source_dir;
     cargo::rerun_if_file_changed(include_path.join("include"));
 
-    builder = builder.clang_arg(format!("-I{}", include_path.display()));
+    bindgen_args.push(format!("-I{}", include_path.display()));
     cc_build.include(include_path);
-
-    // Whether GIF decoding is supported,
-    // is decided by BUILD.gn based on the existence of the libgifcodec directory:
-    if !build
-        .definitions
-        .iter()
-        .any(|(v, _)| v == "SK_USE_LIBGIFCODEC")
-    {
-        cargo::warning("GIF decoding support may be missing, does the directory skia/third_party/externals/libgifcodec/ exist?")
-    }
 
     for (name, value) in &build.definitions {
         match value {
             Some(value) => {
-                cc_build.define(name, value.as_str());
-                builder = builder.clang_arg(format!("-D{}={}", name, value));
+                cc_defines.push((name, value.as_str()));
+                bindgen_args.push(format!("-D{name}={value}"));
             }
             None => {
-                cc_build.define(name, "");
-                builder = builder.clang_arg(format!("-D{}", name));
+                cc_defines.push((name, ""));
+                bindgen_args.push(format!("-D{name}"));
             }
         }
     }
 
     cc_build.cpp(true).out_dir(output_directory);
 
-    if !cfg!(windows) {
-        cc_build.flag("-std=c++17");
+    {
+        let cpp17 = if target.builds_with_msvc() {
+            // m100: See also skia/BUILD.gn `config("cpp17")`
+            "/std:c++17"
+        } else {
+            "-std=c++17"
+        };
+        cc_args.push(cpp17.into());
     }
 
-    let target = cargo::target();
+    // Disable RTTI. Otherwise RustWStream may cause compilation errors.
+    bindgen_args.push("-fno-rtti".into());
+    if target.builds_with_msvc() {
+        cc_args.push("/GR-".into());
+    } else {
+        cc_args.push("-fno-rtti".into());
+    }
 
     let target_str = &target.to_string();
     cc_build.target(target_str);
+    bindgen_args.push(format!("--target={target_str}"));
 
-    let sdk;
-    let sysroot = cargo::env_var("SDKROOT");
-    let mut sysroot: Option<&str> = sysroot.as_ref().map(AsRef::as_ref);
-    let mut sysroot_flag = "--sysroot=";
-
-    match target.as_strs() {
-        (_, "apple", "darwin", _) => {
-            // macOS uses `-isysroot/path/to/sysroot`, but this doesn't appear
-            // to work for other targets. `--sysroot=` works for all targets,
-            // to my knowledge, but doesn't seem to be idiomatic for macOS
-            // compilation. To capture this, we allow manually setting sysroot
-            // on any platform, but we use `-isysroot` for OSX builds and `--sysroot`
-            // elsewhere. If you don't manually set the sysroot, we can automatically
-            // detect it, but this is only possible for macOS.
-            sysroot_flag = "-isysroot";
-
-            if sysroot.is_none() {
-                if let Some(macos_sdk) = xcode::get_sdk_path("macosx") {
-                    sdk = macos_sdk;
-                    sysroot = Some(
-                        sdk.to_str()
-                            .expect("macOS SDK path could not be converted to string"),
-                    );
-                } else {
-                    cargo::warning("failed to get macosx SDK path")
-                }
-            }
-        }
-        (arch, "linux", "android", _) | (arch, "linux", "androideabi", _) => {
-            for arg in android::additional_clang_args(target_str, arch) {
-                builder = builder.clang_arg(arg);
-            }
-        }
-        (arch, "apple", "ios", abi) => {
-            for arg in ios::additional_clang_args(arch, abi) {
-                builder = builder.clang_arg(arg);
-            }
-        }
-        _ => {}
+    // Platform specific arguments and flags.
+    {
+        let (bindgen, cc) = platform::bindgen_and_cc_args(&target, sysroot);
+        bindgen_args.extend(bindgen);
+        cc_args.extend(cc);
     }
 
-    if let Some(sysroot) = sysroot {
-        let sysroot = format!("{}{}", sysroot_flag, sysroot);
-        builder = builder.clang_arg(&sysroot);
-        cc_build.flag(&sysroot);
+    {
+        println!("COMPILING BINDINGS: {:?}", build.binding_sources);
+        println!(
+            "  DEFINES: {}",
+            cc_defines
+                .iter()
+                .map(|(n, v)| format!("{n}={v}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        println!("  ARGS: {}", cc_args.join(" "));
+
+        for (var, val) in cc_defines {
+            cc_build.define(var, val);
+        }
+
+        for arg in cc_args {
+            cc_build.flag(&arg);
+        }
+
+        // we add skia-bindings later on.
+        cc_build.cargo_metadata(false);
+        cc_build.compile(binaries_config::lib::SKIA_BINDINGS);
     }
 
-    println!("COMPILING BINDINGS: {:?}", build.binding_sources);
-    // we add skia-bindings later on.
-    cc_build.cargo_metadata(false);
-    cc_build.compile(binaries_config::lib::SKIA_BINDINGS);
+    {
+        println!("GENERATING BINDINGS");
+        println!("  ARGS: {}", bindgen_args.join(" "));
 
-    println!("GENERATING BINDINGS");
-    let bindings = builder.generate().expect("Unable to generate bindings");
+        builder = builder.clang_args(bindgen_args);
 
-    let out_path = PathBuf::from("src");
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+        let bindings = builder.generate().expect("Unable to generate bindings");
+        bindings
+            .write_to_file(output_directory.join("bindings.rs"))
+            .expect("Couldn't write bindings!");
+    }
 }
 
 const ALLOWLISTED_FUNCTIONS: &[&str] = &[
@@ -306,7 +304,6 @@ const OPAQUE_TYPES: &[&str] = &[
     "std::atomic",
     "std::function",
     "std::unique_ptr",
-    "SkAutoTMalloc",
     "SkTHashMap",
     // Ubuntu 18 LLVM 6: all types derived from SkWeakRefCnt
     "SkWeakRefCnt",
@@ -364,7 +361,9 @@ const OPAQUE_TYPES: &[&str] = &[
     "SkPicture_AbortCallback",
     "SkPixelRef_GenIDChangeListener",
     "SkRasterHandleAllocator",
-    "SkRefCnt",
+    // m114: Must keep `SkRefCnt`, because otherwise bindgen would add an additional vtable because
+    // of its newly introduced virtual functions.
+    // "SkRefCnt",
     "SkShader",
     "SkStream",
     "SkStreamAsset",
@@ -413,6 +412,21 @@ const OPAQUE_TYPES: &[&str] = &[
     "std::tuple_.*",
     // m93: private, exposed by Paint::asBlendMode(), fails layout tests.
     "skstd::optional",
+    // m100
+    "std::optional",
+    // Feature `svg`:
+    "SkSVGNode",
+    "skresources::ResourceProvider",
+    // m107 (layout failure)
+    "skgpu::VulkanMemoryAllocator",
+    // m109 (ParagraphPainter::SkPaintOrID)
+    "std::variant",
+    // m111 Used in SkTextBlobBuilder
+    "skia_private::AutoTMalloc",
+    // Pulled in by `SkData`.
+    "FILE",
+    // m114: Results in wrongly sized template specializations.
+    "skia_private::THashMap",
 ];
 
 const BLOCKLISTED_TYPES: &[&str] = &[
@@ -433,6 +447,10 @@ const BLOCKLISTED_TYPES: &[&str] = &[
     // Linux LLVM9 c++17 with SKIA_DEBUG=1
     "std::__cxx.*",
     "std::array.*",
+    // These two are not used with feature `svg` and conflict with the `Type` rewriter that would
+    // create invalid identifiers.
+    "SkSVGFontWeight",
+    "SkSVGFontWeight_Type",
 ];
 
 #[derive(Debug)]
@@ -517,7 +535,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
     // SkImage_*
     ("BitDepth", rewrite::k_xxx),
     ("CachingHint", rewrite::k_xxx_name),
-    ("CompressionType", rewrite::k_xxx),
+    ("SkTextureCompressionType", rewrite::k_xxx),
     // SkImageFilter_MapDirection
     ("MapDirection", rewrite::k_xxx_name),
     // SkCodec_Result
@@ -542,7 +560,8 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("ContentChangeMode", rewrite::k_xxx_name),
     ("BackendHandleAccess", rewrite::k_xxx_name),
     // SkTextUtils_Align
-    ("Align", rewrite::k_xxx_name),
+    // We need name_opt to cover SkSVGPreserveAspectRatio_Align
+    ("Align", rewrite::k_xxx_name_opt),
     // SkTrimPathEffect_Mode
     ("Mode", rewrite::k_xxx),
     // SkTypeface_SerializeBehavior
@@ -562,15 +581,13 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("GrGLFormat", rewrite::k_xxx),
     ("GrSurfaceOrigin", rewrite::k_xxx_name),
     ("GrBackendApi", rewrite::k_xxx),
-    ("GrMipmapped", rewrite::k_xxx),
-    ("GrRenderable", rewrite::k_xxx),
-    ("GrProtected", rewrite::k_xxx),
+    ("Mipmapped", rewrite::k_xxx),
+    ("Renderable", rewrite::k_xxx),
+    ("Protected", rewrite::k_xxx),
     //
     // DartTypes.h
     //
     ("Affinity", rewrite::k_xxx),
-    ("RectHeightStyle", rewrite::k_xxx),
-    ("RectWidthStyle", rewrite::k_xxx),
     ("TextAlign", rewrite::k_xxx),
     ("TextDirection", rewrite::k_xxx_uppercase),
     ("TextBaseline", rewrite::k_xxx),
@@ -582,7 +599,6 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("TextDecorationStyle", rewrite::k_xxx),
     ("TextDecorationMode", rewrite::k_xxx),
     ("StyleType", rewrite::k_xxx),
-    ("PlaceholderAlignment", rewrite::k_xxx),
     //
     // Vk*
     //
@@ -621,10 +637,25 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("SkScanlineOrder", rewrite::k_xxx_name),
     // m94: SkRuntimeEffect::ChildType
     ("ChildType", rewrite::k_xxx_name_opt),
+    // m108: SkGradientShader::Interpolation::InPremul
+    ("InPremul", rewrite::k_xxx),
+    // m108: skgpu::BackendApi
+    ("BackendApi", rewrite::k_xxx),
+    // m109: SkGradientShader::Interpolation::ColorSpace
+    ("ColorSpace", rewrite::k_xxx),
+    // m109: SkGradientShader::Interpolation::HueMethod
+    ("HueMethod", rewrite::k_xxx),
+    // SkCodecAnimation
+    ("DisposalMethod", rewrite::k_xxx),
+    ("Blend", rewrite::k_xxx),
+    // SkJpegEncoder.h
+    ("AlphaOption", rewrite::k_xxx),
+    // SkWebpEncoder.h
+    ("Compression", rewrite::k_xxx),
 ];
 
 pub(crate) mod rewrite {
-    use heck::ShoutySnakeCase;
+    use heck::ToShoutySnakeCase;
     use regex::Regex;
 
     pub fn k_xxx_uppercase(name: &str, variant: &str) -> String {
@@ -636,41 +667,37 @@ pub(crate) mod rewrite {
             stripped.into()
         } else {
             panic!(
-                "Variant name '{}' of enum type '{}' is expected to start with a 'k'",
-                variant, name
+                "Variant name '{variant}' of enum type '{name}' is expected to start with a 'k'"
             );
         }
     }
 
     pub fn _k_xxx_enum(name: &str, variant: &str) -> String {
-        capture(name, variant, &format!("k(.*)_{}", name))
+        capture(name, variant, &format!("k(.*)_{name}"))
     }
 
     pub fn k_xxx_name_opt(name: &str, variant: &str) -> String {
-        let suffix = &format!("_{}", name);
+        let suffix = &format!("_{name}");
         if variant.ends_with(suffix) {
-            capture(name, variant, &format!("k(.*){}", suffix))
+            capture(name, variant, &format!("k(.*){suffix}"))
         } else {
             capture(name, variant, "k(.*)")
         }
     }
 
     pub fn k_xxx_name(name: &str, variant: &str) -> String {
-        capture(name, variant, &format!("k(.*)_{}", name))
+        capture(name, variant, &format!("k(.*)_{name}"))
     }
 
     pub fn vk(name: &str, variant: &str) -> String {
         let prefix = name.to_shouty_snake_case();
-        capture(name, variant, &format!("{}_(.*)", prefix))
+        capture(name, variant, &format!("{prefix}_(.*)"))
     }
 
     fn capture(name: &str, variant: &str, pattern: &str) -> String {
         let re = Regex::new(pattern).unwrap();
         re.captures(variant).unwrap_or_else(|| {
-            panic!(
-                "failed to match '{}' on enum variant '{}' of enum '{}'",
-                pattern, variant, name
-            )
+            panic!("failed to match '{pattern}' on enum variant '{variant}' of enum '{name}'")
         })[1]
             .into()
     }
@@ -681,10 +708,12 @@ pub use definitions::{Definition, Definitions};
 pub(crate) mod definitions {
     use super::env;
     use crate::build_support::features;
-    use std::collections::HashSet;
-    use std::fs;
-    use std::io::Write;
-    use std::path::{Path, PathBuf};
+    use std::{
+        collections::HashSet,
+        fs,
+        io::Write,
+        path::{Path, PathBuf},
+    };
 
     /// A preprocessor definition.
     pub type Definition = (String, Option<String>);
@@ -705,9 +734,9 @@ pub(crate) mod definitions {
         let mut file = fs::File::create(output_directory.as_ref().join("skia-defines.txt"))?;
         for (name, value) in definitions.iter() {
             if let Some(value) = value {
-                writeln!(file, "-D{}={}", name, value)?;
+                writeln!(file, "-D{name}={value}")?;
             } else {
-                writeln!(file, "-D{}", name)?;
+                writeln!(file, "-D{name}")?;
             }
         }
         writeln!(file)
@@ -754,7 +783,13 @@ pub(crate) mod definitions {
             files.extend(vec![
                 "obj/modules/skshaper/skshaper.ninja".into(),
                 "obj/modules/skparagraph/skparagraph.ninja".into(),
+                // shaper.cpp includes SkLoadICU.h
+                "obj/third_party/icu/icu.ninja".into(),
+                "obj/modules/skunicode/skunicode.ninja".into(),
             ]);
+        }
+        if features.svg {
+            files.push("obj/modules/svg/svg.ninja".into());
         }
         files
     }
@@ -777,7 +812,7 @@ pub(crate) mod definitions {
                 if let Some(stripped) = d.strip_prefix(PREFIX) {
                     stripped
                 } else {
-                    panic!("missing '{}' prefix from a definition", PREFIX)
+                    panic!("missing '{PREFIX}' prefix from a definition")
                 }
             })
             .map(|d| {

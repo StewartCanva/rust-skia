@@ -38,7 +38,7 @@ impl fmt::Debug for Region {
 }
 
 pub use skia_bindings::SkRegion_Op as RegionOp;
-variant_name!(RegionOp::ReverseDifference, region_op_naming);
+variant_name!(RegionOp::ReverseDifference);
 
 impl Region {
     pub fn new() -> Region {
@@ -153,7 +153,8 @@ impl Region {
         unsafe { self.native().translate(d.x, d.y, self_ptr) }
     }
 
-    pub fn translated(&self, d: impl Into<IVector>) -> Region {
+    #[must_use]
+    pub fn translated(&self, d: impl Into<IVector>) -> Self {
         let mut r = self.clone();
         r.translate(d);
         r
@@ -340,7 +341,7 @@ impl fmt::Debug for Iterator<'_> {
 }
 
 impl<'a> Iterator<'a> {
-    pub fn new_empty() -> Iterator<'a> {
+    pub fn new_empty() -> Self {
         Iterator::construct(|iterator| unsafe {
             sb::C_SkRegion_Iterator_Construct(iterator);
         })
@@ -357,9 +358,7 @@ impl<'a> Iterator<'a> {
     pub fn reset(mut self, region: &Region) -> Iterator {
         unsafe {
             self.native_mut().reset(region.native());
-            let r = mem::transmute_copy(&self);
-            mem::forget(self);
-            r
+            mem::transmute(self)
         }
     }
 
@@ -513,6 +512,7 @@ fn new_clone_drop() {
 #[test]
 fn can_compare() {
     let r1 = Region::new();
+    #[allow(clippy::redundant_clone)]
     let r2 = r1.clone();
     assert!(r1 == r2);
 }

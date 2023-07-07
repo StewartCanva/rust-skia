@@ -1,13 +1,12 @@
 use crate::DrawingDriver;
-use skia_safe::textlayout::{FontCollection, ParagraphBuilder, ParagraphStyle, TextStyle};
-use skia_safe::{icu, Canvas, FontMgr, Paint, Point};
+use skia_safe::{
+    textlayout::{FontCollection, ParagraphBuilder, ParagraphStyle, TextStyle},
+    Canvas, FontMgr, Paint, Point,
+};
 use std::path;
 
 pub fn draw(driver: &mut impl DrawingDriver, path: &path::Path) {
     let path = path.join("SkParagraph-Example");
-
-    icu::init();
-
     driver.draw_image_256(&path, "lorem-ipsum", draw_lorem_ipsum);
 }
 
@@ -17,7 +16,7 @@ fn draw_lorem_ipsum(canvas: &mut Canvas) {
     let paragraph_style = ParagraphStyle::new();
     let mut paragraph_builder = ParagraphBuilder::new(&paragraph_style, font_collection);
     let mut ts = TextStyle::new();
-    ts.set_foreground_color(Paint::default());
+    ts.set_foreground_color(&Paint::default());
     paragraph_builder.push_style(&ts);
     paragraph_builder.add_text(LOREM_IPSUM);
     let mut paragraph = paragraph_builder.build();

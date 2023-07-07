@@ -12,9 +12,13 @@ use std::{
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
 pub struct IRect {
+    /// The x coordinate of the rectangle's left edge.
     pub left: i32,
+    /// The y coordinate of the rectangle's top edge.
     pub top: i32,
+    /// The x coordinate of the rectangle's right edge.
     pub right: i32,
+    /// The y coordinate of the rectangle's bottom edge.
     pub bottom: i32,
 }
 
@@ -74,48 +78,48 @@ impl IRect {
         }
     }
 
-    pub fn left(&self) -> i32 {
+    pub const fn left(&self) -> i32 {
         self.left
     }
 
-    pub fn top(&self) -> i32 {
+    pub const fn top(&self) -> i32 {
         self.top
     }
 
-    pub fn right(&self) -> i32 {
+    pub const fn right(&self) -> i32 {
         self.right
     }
 
-    pub fn bottom(&self) -> i32 {
+    pub const fn bottom(&self) -> i32 {
         self.bottom
     }
 
-    pub fn x(&self) -> i32 {
+    pub const fn x(&self) -> i32 {
         self.left
     }
 
-    pub fn y(&self) -> i32 {
+    pub const fn y(&self) -> i32 {
         self.top
     }
 
-    pub fn width(&self) -> i32 {
+    pub const fn width(&self) -> i32 {
         sk32::can_overflow_sub(self.right, self.left)
     }
 
-    pub fn height(&self) -> i32 {
+    pub const fn height(&self) -> i32 {
         sk32::can_overflow_sub(self.bottom, self.top)
     }
 
-    pub fn size(&self) -> ISize {
-        (self.width(), self.height()).into()
+    pub const fn size(&self) -> ISize {
+        ISize::new(self.width(), self.height())
     }
 
-    pub fn width_64(&self) -> i64 {
-        i64::from(self.right) - i64::from(self.left)
+    pub const fn width_64(&self) -> i64 {
+        self.right as i64 - self.left as i64
     }
 
-    pub fn height_64(&self) -> i64 {
-        i64::from(self.bottom) - i64::from(self.top)
+    pub const fn height_64(&self) -> i64 {
+        self.bottom as i64 - self.top as i64
     }
 
     pub fn is_empty_64(&self) -> bool {
@@ -328,9 +332,13 @@ impl Contains<Rect> for IRect {
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Default, Debug)]
 pub struct Rect {
+    /// The x coordinate of the rectangle's left edge.
     pub left: scalar,
+    /// The y coordinate of the rectangle's top edge.
     pub top: scalar,
+    /// The x coordinate of the rectangle's right edge.
     pub right: scalar,
+    /// The y coordinate of the rectangle's bottom edge.
     pub bottom: scalar,
 }
 
@@ -416,27 +424,27 @@ impl Rect {
         !accum.is_nan()
     }
 
-    pub fn x(&self) -> scalar {
+    pub const fn x(&self) -> scalar {
         self.left
     }
 
-    pub fn y(&self) -> scalar {
+    pub const fn y(&self) -> scalar {
         self.top
     }
 
-    pub fn left(&self) -> scalar {
+    pub const fn left(&self) -> scalar {
         self.left
     }
 
-    pub fn top(&self) -> scalar {
+    pub const fn top(&self) -> scalar {
         self.top
     }
 
-    pub fn right(&self) -> scalar {
+    pub const fn right(&self) -> scalar {
         self.right
     }
 
-    pub fn bottom(&self) -> scalar {
+    pub const fn bottom(&self) -> scalar {
         self.bottom
     }
 
@@ -452,10 +460,6 @@ impl Rect {
         self.native().fBottom - self.native().fTop
     }
 
-    pub fn center(&self) -> Point {
-        Point::from((self.center_x(), self.center_y()))
-    }
-
     pub fn center_x(&self) -> scalar {
         // don't use (fLeft + fBottom) * 0.5 as that might overflow before the 0.5
         self.left * 0.5 + self.right * 0.5
@@ -464,6 +468,10 @@ impl Rect {
     pub fn center_y(&self) -> scalar {
         // don't use (fTop + fBottom) * 0.5 as that might overflow before the 0.5
         self.top * 0.5 + self.bottom * 0.5
+    }
+
+    pub fn center(&self) -> Point {
+        Point::from((self.center_x(), self.center_y()))
     }
 
     pub fn to_quad(self) -> [Point; 4] {
@@ -535,6 +543,7 @@ impl Rect {
         *self = Self::from_iwh(width, height)
     }
 
+    #[must_use]
     pub fn with_offset(&self, d: impl Into<Vector>) -> Self {
         let d = d.into();
         Self::new(
@@ -545,6 +554,7 @@ impl Rect {
         )
     }
 
+    #[must_use]
     pub fn with_inset(&self, d: impl Into<Vector>) -> Self {
         let d = d.into();
         Self::new(
@@ -555,6 +565,7 @@ impl Rect {
         )
     }
 
+    #[must_use]
     pub fn with_outset(&self, d: impl Into<Vector>) -> Self {
         let d = d.into();
         Self::new(
@@ -573,6 +584,7 @@ impl Rect {
         *self = self.with_offset_to(new_p)
     }
 
+    #[must_use]
     pub fn with_offset_to(&self, new_p: impl Into<Point>) -> Self {
         let new_p = new_p.into();
         Self::new(new_p.x, new_p.y, new_p.x - self.left, new_p.y - self.top)

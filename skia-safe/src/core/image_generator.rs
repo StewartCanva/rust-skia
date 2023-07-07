@@ -1,8 +1,8 @@
 #[cfg(feature = "gpu")]
 use crate::gpu;
-use crate::{image, prelude::*, ColorSpace, Data, ISize, ImageInfo, Matrix, Paint, Picture};
+use crate::{prelude::*, yuva_pixmap_info, AlphaType, Data, ImageInfo, YUVAPixmapInfo};
 use skia_bindings::{self as sb, SkImageGenerator};
-use std::fmt;
+use std::{fmt, ptr};
 
 pub type ImageGenerator = RefHandle<SkImageGenerator>;
 unsafe_send_sync!(ImageGenerator);
@@ -51,34 +51,39 @@ impl ImageGenerator {
 
     // TODO: m86: get_pixels(&Pixmap)
 
-    // TODO: generateTexture()
+    pub fn query_yuva_info(
+        &self,
+        supported_data_types: &yuva_pixmap_info::SupportedDataTypes,
+    ) -> Option<YUVAPixmapInfo> {
+        YUVAPixmapInfo::new_if_valid(|info| unsafe {
+            self.native()
+                .queryYUVAInfo(supported_data_types.native(), info)
+        })
+    }
 
-    #[cfg(feature = "gpu")]
-    #[deprecated(since = "0.29.0", note = "removed without replacement")]
-    pub fn textures_are_cacheable(&self) -> ! {
-        unimplemented!("removed without replacement")
+    // TODO: getYUVAPlanes()
+
+    pub fn is_texture_generator(&self) -> bool {
+        unsafe { sb::C_SkImageGenerator_isTextureGenerator(self.native()) }
     }
 
     pub fn from_encoded(encoded: impl Into<Data>) -> Option<Self> {
-        Self::from_ptr(unsafe { sb::C_SkImageGenerator_MakeFromEncoded(encoded.into().into_ptr()) })
+        Self::from_ptr(unsafe {
+            sb::C_SkImageGenerator_MakeFromEncoded(encoded.into().into_ptr(), ptr::null())
+        })
     }
 
-    pub fn from_picture(
-        size: ISize,
-        picture: impl Into<Picture>,
-        matrix: Option<&Matrix>,
-        paint: Option<&Paint>,
-        bit_depth: image::BitDepth,
-        color_space: impl Into<Option<ColorSpace>>,
+    pub fn from_encoded_with_alpha_type(
+        encoded: impl Into<Data>,
+        alpha_type: impl Into<Option<AlphaType>>,
     ) -> Option<Self> {
         Self::from_ptr(unsafe {
-            sb::C_SkImageGenerator_MakeFromPicture(
-                size.native(),
-                picture.into().into_ptr(),
-                matrix.native_ptr_or_null(),
-                paint.native_ptr_or_null(),
-                bit_depth,
-                color_space.into().into_ptr_or_null(),
+            sb::C_SkImageGenerator_MakeFromEncoded(
+                encoded.into().into_ptr(),
+                alpha_type
+                    .into()
+                    .map(|at| &at as *const _)
+                    .unwrap_or(ptr::null()),
             )
         })
     }

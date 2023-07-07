@@ -6,8 +6,8 @@ use super::gl;
 use super::mtl;
 #[cfg(feature = "vulkan")]
 use super::vk;
-use super::{BackendAPI, BackendSurfaceMutableState, Mipmapped};
-use crate::{prelude::*, ISize};
+use super::{BackendAPI, Mipmapped, MutableTextureState};
+use crate::{interop::AsStr, prelude::*, ISize};
 use skia_bindings::{
     self as sb, GrBackendFormat, GrBackendRenderTarget, GrBackendTexture, GrMipmapped,
 };
@@ -65,15 +65,29 @@ impl BackendFormat {
     }
 
     #[cfg(feature = "vulkan")]
-    pub fn new_vulkan(format: vk::Format) -> Self {
-        Self::construct(|bf| unsafe { sb::C_GrBackendFormat_ConstructVk(bf, format) })
-            .assert_valid()
+    pub fn new_vulkan(
+        format: vk::Format,
+        will_use_drm_format_modifiers: impl Into<Option<bool>>,
+    ) -> Self {
+        let will_use_drm_format_modifiers = will_use_drm_format_modifiers.into().unwrap_or(false);
+        Self::construct(|bf| unsafe {
+            sb::C_GrBackendFormat_ConstructVk(bf, format, will_use_drm_format_modifiers)
+        })
+        .assert_valid()
     }
 
     #[cfg(feature = "vulkan")]
-    pub fn new_vulkan_ycbcr(conversion_info: &vk::YcbcrConversionInfo) -> Self {
+    pub fn new_vulkan_ycbcr(
+        conversion_info: &vk::YcbcrConversionInfo,
+        will_use_drm_format_modifiers: impl Into<Option<bool>>,
+    ) -> Self {
+        let will_use_drm_format_modifiers = will_use_drm_format_modifiers.into().unwrap_or(false);
         Self::construct(|bf| unsafe {
-            sb::C_GrBackendFormat_ConstructVk2(bf, conversion_info.native())
+            sb::C_GrBackendFormat_ConstructVk2(
+                bf,
+                conversion_info.native(),
+                will_use_drm_format_modifiers,
+            )
         })
         .assert_valid()
     }
@@ -103,10 +117,12 @@ impl BackendFormat {
 
     #[cfg(feature = "gl")]
     pub fn as_gl_format(&self) -> gl::Format {
-        unsafe {
-            #[allow(clippy::map_clone)]
-            self.native().asGLFormat()
-        }
+        unsafe { self.native().asGLFormat() }
+    }
+
+    #[cfg(feature = "gl")]
+    pub fn as_gl_format_enum(&self) -> gl::Enum {
+        unsafe { self.native().asGLFormatEnum() }
     }
 
     #[cfg(feature = "vulkan")]
@@ -129,6 +145,7 @@ impl BackendFormat {
             .if_true_some(d3d::DXGI_FORMAT::from_native_c(f))
     }
 
+    #[must_use]
     pub fn to_texture_2d(&self) -> Self {
         let mut new = Self::new_invalid();
         unsafe { sb::C_GrBackendFormat_makeTexture2D(self.native(), new.native_mut()) };
@@ -154,18 +171,20 @@ impl BackendFormat {
     }
 }
 
-pub type BackendTexture = Handle<GrBackendTexture>;
+// GrBackendTexture contains a string `fLabel`, and with SSO on some platforms, it can't be moved.
+// See <https://github.com/rust-skia/rust-skia/issues/750>.
+pub type BackendTexture = RefHandle<GrBackendTexture>;
 unsafe_send_sync!(BackendTexture);
 
 impl NativeDrop for GrBackendTexture {
     fn drop(&mut self) {
-        unsafe { sb::C_GrBackendTexture_destruct(self) }
+        unsafe { sb::C_GrBackendTexture_delete(self) }
     }
 }
 
-impl NativeClone for GrBackendTexture {
+impl Clone for BackendTexture {
     fn clone(&self) -> Self {
-        construct(|texture| unsafe { sb::C_GrBackendTexture_CopyConstruct(texture, self) })
+        unsafe { Self::from_ptr(sb::C_GrBackendTexture_Clone(self.native())) }.unwrap()
     }
 }
 
@@ -173,6 +192,7 @@ impl fmt::Debug for BackendTexture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_struct("BackendTexture");
         d.field("dimensions", &self.dimensions());
+        d.field("label", &self.label());
         d.field("mipmapped", &self.mipmapped());
         d.field("backend", &self.backend());
         #[cfg(feature = "gl")]
@@ -194,7 +214,7 @@ impl fmt::Debug for BackendTexture {
 
 impl BackendTexture {
     pub(crate) fn new_invalid() -> Self {
-        Self::construct(|t| unsafe { sb::C_GrBackendTexture_Construct(t) })
+        Self::from_ptr(unsafe { sb::C_GrBackendTexture_New() }).unwrap()
     }
 
     #[cfg(feature = "gl")]
@@ -204,18 +224,50 @@ impl BackendTexture {
         mipmapped: super::Mipmapped,
         gl_info: gl::TextureInfo,
     ) -> Self {
-        Self::from_native_if_valid(construct(|texture| {
-            sb::C_GrBackendTexture_ConstructGL(texture, width, height, mipmapped, gl_info.native())
-        }))
+        Self::new_gl_with_label((width, height), mipmapped, gl_info, "")
+    }
+
+    #[cfg(feature = "gl")]
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn new_gl_with_label(
+        (width, height): (i32, i32),
+        mipmapped: super::Mipmapped,
+        gl_info: gl::TextureInfo,
+        label: impl AsRef<str>,
+    ) -> Self {
+        let str = label.as_ref().as_bytes();
+        Self::from_ptr(sb::C_GrBackendTexture_NewGL(
+            width,
+            height,
+            mipmapped,
+            gl_info.native(),
+            str.as_ptr() as _,
+            str.len(),
+        ))
         .unwrap()
     }
 
     #[cfg(feature = "vulkan")]
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new_vulkan((width, height): (i32, i32), vk_info: &vk::ImageInfo) -> Self {
-        Self::from_native_if_valid(construct(|texture| {
-            sb::C_GrBackendTexture_ConstructVk(texture, width, height, vk_info.native())
-        }))
+        Self::new_vulkan_with_label((width, height), vk_info, "")
+    }
+
+    #[cfg(feature = "vulkan")]
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn new_vulkan_with_label(
+        (width, height): (i32, i32),
+        vk_info: &vk::ImageInfo,
+        label: impl AsRef<str>,
+    ) -> Self {
+        let label = label.as_ref().as_bytes();
+        Self::from_native_if_valid(sb::C_GrBackendTexture_NewVk(
+            width,
+            height,
+            vk_info.native(),
+            label.as_ptr() as _,
+            label.len(),
+        ))
         .unwrap()
     }
 
@@ -226,33 +278,58 @@ impl BackendTexture {
         mipmapped: super::Mipmapped,
         mtl_info: &mtl::TextureInfo,
     ) -> Self {
-        Self::from_native_if_valid(construct(|texture| {
-            sb::C_GrBackendTexture_ConstructMtl(
-                texture,
-                width,
-                height,
-                mipmapped,
-                mtl_info.native(),
-            )
-        }))
+        Self::new_metal_with_label((width, height), mipmapped, mtl_info, "")
+    }
+
+    #[cfg(feature = "metal")]
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn new_metal_with_label(
+        (width, height): (i32, i32),
+        mipmapped: super::Mipmapped,
+        mtl_info: &mtl::TextureInfo,
+        label: impl AsRef<str>,
+    ) -> Self {
+        let label = label.as_ref().as_bytes();
+        Self::from_native_if_valid(sb::C_GrBackendTexture_NewMtl(
+            width,
+            height,
+            mipmapped,
+            mtl_info.native(),
+            label.as_ptr() as _,
+            label.len(),
+        ))
         .unwrap()
     }
 
     #[cfg(feature = "d3d")]
     pub fn new_d3d((width, height): (i32, i32), d3d_info: &d3d::TextureResourceInfo) -> Self {
+        Self::new_d3d_with_label((width, height), d3d_info, "")
+    }
+
+    #[cfg(feature = "d3d")]
+    pub fn new_d3d_with_label(
+        (width, height): (i32, i32),
+        d3d_info: &d3d::TextureResourceInfo,
+        label: impl AsRef<str>,
+    ) -> Self {
+        let label = label.as_ref().as_bytes();
         unsafe {
-            Self::from_native_if_valid(construct(|texture| {
-                sb::C_GrBackendTexture_ConstructD3D(texture, width, height, d3d_info.native())
-            }))
+            Self::from_native_if_valid(sb::C_GrBackendTexture_NewD3D(
+                width,
+                height,
+                d3d_info.native(),
+                label.as_ptr() as _,
+                label.len(),
+            ))
         }
         .unwrap()
     }
 
     pub(crate) unsafe fn from_native_if_valid(
-        backend_texture: GrBackendTexture,
+        backend_texture: *mut GrBackendTexture,
     ) -> Option<BackendTexture> {
-        Self::native_is_valid(&backend_texture)
-            .if_true_then_some(|| BackendTexture::from_native_c(backend_texture))
+        Self::native_is_valid(backend_texture)
+            .if_true_then_some(|| BackendTexture::from_ptr(backend_texture).unwrap())
     }
 
     pub fn dimensions(&self) -> ISize {
@@ -265,6 +342,10 @@ impl BackendTexture {
 
     pub fn height(&self) -> i32 {
         self.native().fHeight
+    }
+
+    pub fn label(&self) -> &str {
+        self.native().fLabel.as_str()
     }
 
     pub fn mipmapped(&self) -> Mipmapped {
@@ -352,20 +433,21 @@ impl BackendTexture {
         format
     }
 
+    pub fn set_mutable_state(&mut self, state: &MutableTextureState) {
+        unsafe { self.native_mut().setMutableState(state.native()) }
+    }
+
     pub fn is_protected(&self) -> bool {
         unsafe { self.native().isProtected() }
     }
 
-    #[deprecated(
-        note = "Invalid BackendTextures aren't supported anymore",
-        since = "0.37.0"
-    )]
+    #[deprecated(note = "Invalid BackendTextures aren't supported", since = "0.37.0")]
     pub fn is_valid(&self) -> bool {
         self.native().fIsValid
     }
 
-    pub(crate) fn native_is_valid(texture: &GrBackendTexture) -> bool {
-        texture.fIsValid
+    pub(crate) unsafe fn native_is_valid(texture: *const GrBackendTexture) -> bool {
+        (*texture).fIsValid
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -557,7 +639,7 @@ impl BackendRenderTarget {
         })
     }
 
-    pub fn set_mutable_stat(&mut self, state: &BackendSurfaceMutableState) {
+    pub fn set_mutable_state(&mut self, state: &MutableTextureState) {
         unsafe { self.native_mut().setMutableState(state.native()) }
     }
 
@@ -572,5 +654,23 @@ impl BackendRenderTarget {
 
     pub(crate) fn native_is_valid(rt: &GrBackendRenderTarget) -> bool {
         rt.fIsValid
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BackendTexture;
+    use std::hint::black_box;
+
+    // Regression test for <https://github.com/rust-skia/rust-skia/issues/750>
+    #[test]
+    fn create_move_and_drop_backend_texture() {
+        let texture = force_move(BackendTexture::new_invalid());
+        drop(texture);
+    }
+
+    fn force_move<V>(src: V) -> V {
+        let src = black_box(src);
+        *black_box(Box::new(src))
     }
 }

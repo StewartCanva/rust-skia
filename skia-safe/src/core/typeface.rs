@@ -3,19 +3,18 @@ use crate::{
     font_parameters::VariationAxis,
     interop::{self, MemoryStream, NativeStreamBase, StreamAsset},
     prelude::*,
-    Data, FontArguments, FontStyle, GlyphId, Rect, TextEncoding, Unichar,
+    Data, FontArguments, FontStyle, FourByteTag, GlyphId, Rect, TextEncoding, Unichar,
 };
 use skia_bindings::{self as sb, SkRefCntBase, SkTypeface, SkTypeface_LocalizedStrings};
 use std::{ffi, fmt, mem, ptr};
 
-pub type FontId = skia_bindings::SkFontID;
+pub type TypefaceId = skia_bindings::SkTypefaceID;
+#[deprecated(since = "0.49.0", note = "use TypefaceId")]
+pub type FontId = TypefaceId;
 pub type FontTableTag = skia_bindings::SkFontTableTag;
 
 pub use skia_bindings::SkTypeface_SerializeBehavior as SerializeBehavior;
-variant_name!(
-    SerializeBehavior::DontIncludeData,
-    serialize_behavior_naming
-);
+variant_name!(SerializeBehavior::DontIncludeData);
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct LocalizedString {
@@ -23,8 +22,11 @@ pub struct LocalizedString {
     pub language: String,
 }
 
+pub type FactoryId = FourByteTag;
+
 pub type Typeface = RCHandle<SkTypeface>;
 unsafe_send_sync!(Typeface);
+require_base_type!(SkTypeface, sb::SkWeakRefCnt);
 
 impl NativeRefCountedBase for SkTypeface {
     type Base = SkRefCntBase;
@@ -49,7 +51,6 @@ impl fmt::Debug for Typeface {
 }
 
 impl Typeface {
-    // Canonical new:
     pub fn new(family_name: impl AsRef<str>, font_style: FontStyle) -> Option<Self> {
         Self::from_name(family_name, font_style)
     }
@@ -106,7 +107,7 @@ impl Typeface {
         }
     }
 
-    pub fn unique_id(&self) -> FontId {
+    pub fn unique_id(&self) -> TypefaceId {
         self.native().fUniqueID
     }
 
@@ -287,11 +288,15 @@ impl Typeface {
             })
     }
 
+    // TODO: openExistingStream()
+
     // TODO: createScalerContext()
 
     pub fn bounds(&self) -> Rect {
         Rect::from_native_c(unsafe { sb::C_SkTypeface_getBounds(self.native()) })
     }
+
+    // TODO: Register()
 }
 
 pub type LocalizedStringsIter = RefHandle<SkTypeface_LocalizedStrings>;
