@@ -1,50 +1,60 @@
-use super::{binaries, env, git, utils, SRC_BINDINGS_RS};
+use super::{binaries, env, git, utils};
 use crate::build_support::{binaries_config, cargo};
 use flate2::read::GzDecoder;
-use std::ffi::OsStr;
-use std::fs;
-use std::path::{Component, Path, PathBuf};
-use std::process::Command;
-use std::process::Stdio;
-use std::{io, io::Cursor};
+use std::{
+    ffi::OsStr,
+    fs,
+    io::{self, Cursor},
+    path::{Component, Path, PathBuf},
+    process::{Command, Stdio},
+};
 
-/// Resolve the skia and depot_tools subdirectory contents, either by checking out the
-/// submodules, or when the build.rs was called outside of the git repository,
-/// by downloading and unpacking them from GitHub.
+/// Resolve the `skia/` and `depot_tools/` subdirectory contents, either by checking out the
+/// submodules, or when `build.rs` was invoked outside of the git repository by downloading and
+/// unpacking them from GitHub.
 pub fn resolve_dependencies() {
     if cargo::is_crate() {
-        // we are in a crate.
+        // In a crate.
         download_dependencies();
-    } else {
-        // we are not in a crate, assuming we are in our git repo.
-        // so just update all submodules.
-        assert!(
-            Command::new("git")
-                .args(&["submodule", "update", "--init", "--depth", "1"])
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .unwrap()
-                .success(),
-            "`git submodule update` failed"
-        );
+        return;
+    }
+
+    // Not in a crate, assuming a git repo. Update all submodules.
+    let submodules_updated = Command::new("git")
+        .args(["submodule", "update", "--init", "--depth", "1"])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .unwrap()
+        .success();
+
+    // If `git submodule update` failed, either git is not installed,
+    // or we're not building from a git repo.
+    // This can happen if the repo is downloaded as a ZIP archive.
+    if !submodules_updated {
+        println!("`git submodule update` failed. Falling back to HTTP download");
+        download_dependencies();
     }
 }
 
-/// Downloads the skia and depot_tools from their repositories.
+/// Downloads the `skia` and `depot_tools` from their repositories.
 ///
-/// The hashes are taken from the Cargo.toml section [package.metadata].
+/// The hashes are taken from the `Cargo.toml` section `[package.metadata]`.
 fn download_dependencies() {
     let metadata = cargo::get_metadata();
 
-    for dep in dependencies() {
+    for dep in DEPENDENCIES {
         let repo_url = dep.url;
         let repo_name = dep.repo;
 
         let dir = PathBuf::from(repo_name);
 
-        // directory exists => assume that the download of the archive was successful.
-        if dir.exists() {
+        // If the repo is downloaded from GitHub as a ZIP archive,
+        // the directories for submodules will exist but will be empty.
+        // If the directory exists and is not empty,
+        // assume the download has succeeded in previous build runs,
+        // so we can skip it.
+        if dir_not_empty(&dir) {
             continue;
         }
 
@@ -54,19 +64,19 @@ fn download_dependencies() {
             .find(|(n, _)| n == repo_name)
             .expect("metadata entry not found");
 
-        // remove unpacking directory, github will format it to repo_name-hash
-        let unpack_dir = &PathBuf::from(format!("{}-{}", repo_name, short_hash));
+        // Remove unpacking directory, GitHub will format it to repo_name-hash
+        let unpack_dir = &PathBuf::from(format!("{repo_name}-{short_hash}"));
         if unpack_dir.is_dir() {
             fs::remove_dir_all(unpack_dir).unwrap();
         }
 
-        // download
-        let archive_url = &format!("{}/{}", repo_url, short_hash);
-        println!("DOWNLOADING: {}", archive_url);
+        // Download
+        let archive_url = &format!("{repo_url}/{short_hash}");
+        println!("DOWNLOADING: {archive_url}");
         let archive = utils::download(archive_url)
-            .unwrap_or_else(|err| panic!("Failed to download {} ({})", archive_url, err));
+            .unwrap_or_else(|err| panic!("Failed to download {archive_url} ({err})"));
 
-        // unpack
+        // Unpack
         {
             let tar = GzDecoder::new(Cursor::new(archive));
             let mut archive = tar::Archive::new(tar);
@@ -85,48 +95,56 @@ fn download_dependencies() {
             }
         }
 
-        // move unpack directory to the target repository directory
+        // Move unpack directory to the target repository directory
         fs::rename(unpack_dir, repo_name).expect("failed to move directory");
     }
 }
 
+fn dir_not_empty(dir_path: &Path) -> bool {
+    dir_path
+        .read_dir()
+        .map(|mut contents| contents.next().is_some())
+        .unwrap_or(false)
+}
+
 // Specifies where to download Skia and Depot Tools archives from.
 //
-// We use codeload.github.com, otherwise the short hash will be expanded to a full hash as the root
-// directory inside the tar.gz, and we run into filesystem path length restrictions
-// with Skia.
+// Using `codeload.github.com`, otherwise the short hash will be expanded to a full hash as the root
+// directory inside the `tar.gz`, and we run into filesystem path length restrictions with Skia.
 struct Dependency {
     pub repo: &'static str,
     pub url: &'static str,
     pub path_filter: fn(&Path) -> bool,
 }
 
-fn dependencies() -> &'static [Dependency] {
-    return &[
-        Dependency {
-            repo: "skia",
-            url: "https://codeload.github.com/rust-skia/skia/tar.gz",
-            path_filter: filter_skia,
-        },
-        Dependency {
-            repo: "depot_tools",
-            url: "https://codeload.github.com/rust-skia/depot_tools/tar.gz",
-            path_filter: filter_depot_tools,
-        },
-    ];
+const DEPENDENCIES: [Dependency; 2] = [
+    Dependency {
+        repo: "skia",
+        url: "https://codeload.github.com/rust-skia/skia/tar.gz",
+        path_filter: filter_skia,
+    },
+    Dependency {
+        repo: "depot_tools",
+        url: "https://codeload.github.com/rust-skia/depot_tools/tar.gz",
+        path_filter: filter_depot_tools,
+    },
+];
 
-    // infra/ contains very long filenames which may hit the max path restriction on Windows.
-    // https://github.com/rust-skia/rust-skia/issues/169
-    fn filter_skia(p: &Path) -> bool {
-        !matches!(p.components().next(),
+// `infra/` contains very long filenames which may hit the max path restriction on Windows.
+// <https://github.com/rust-skia/rust-skia/issues/169>
+fn filter_skia(p: &Path) -> bool {
+    !matches!(p.components().next(),
             Some(Component::Normal(name)) if name == OsStr::new("infra"))
-    }
+}
 
-    // we need only ninja from depot_tools.
-    // https://github.com/rust-skia/rust-skia/pull/165
-    fn filter_depot_tools(p: &Path) -> bool {
-        p.to_str().unwrap().starts_with("ninja")
+// Need only `ninja` and what `ninja.py` refers to from `depot_tools/`.
+// <https://github.com/rust-skia/rust-skia/pull/165>
+fn filter_depot_tools(p: &Path) -> bool {
+    if p.components().count() != 1 {
+        return false;
     }
+    let str = p.to_str().unwrap();
+    str.starts_with("ninja") || str.ends_with(".py")
 }
 
 impl binaries_config::BinariesConfiguration {
@@ -140,18 +158,15 @@ pub fn try_prepare_download(binaries_config: &binaries_config::BinariesConfigura
     env::force_skia_build() || {
         let force_download = env::force_skia_binaries_download();
         if let Some((tag, key)) = should_try_download_binaries(binaries_config, force_download) {
-            println!(
-                "TRYING TO DOWNLOAD AND INSTALL SKIA BINARIES: {}/{}",
-                tag, key
-            );
+            println!("TRYING TO DOWNLOAD AND INSTALL SKIA BINARIES: {tag}/{key}");
             let url = binaries::download_url(
                 env::skia_binaries_url().unwrap_or_else(env::skia_binaries_url_default),
                 tag,
                 key,
             );
-            println!("  FROM: {}", url);
+            println!("  FROM: {url}");
             if let Err(e) = download_and_install(url, &binaries_config.output_directory) {
-                println!("DOWNLOAD AND INSTALL FAILED: {}", e);
+                println!("DOWNLOAD AND INSTALL FAILED: {e}");
                 if force_download {
                     panic!("Downloading of binaries was forced but failed.")
                 }
@@ -166,21 +181,21 @@ pub fn try_prepare_download(binaries_config: &binaries_config::BinariesConfigura
     }
 }
 
-/// If the binaries should be downloaded, return the tag and the key.
+/// If the binaries should be downloaded, return the tag and key.
 fn should_try_download_binaries(
     config: &binaries_config::BinariesConfiguration,
     force: bool,
 ) -> Option<(String, String)> {
     let tag = cargo::package_version();
 
-    // for testing:
+    // For testing:
     if force {
-        // retrieve the hash from the repository above us.
+        // Retrieve the hash from the repository above.
         let half_hash = git::half_hash()?;
         return Some((tag, config.key(&half_hash)));
     }
 
-    // are we building inside a crate?
+    // Building inside a crate?
     if let Ok(ref full_hash) = cargo::crate_repository_hash() {
         let half_hash = git::trim_hash(full_hash);
         return Some((tag, config.key(&half_hash)));
@@ -196,9 +211,7 @@ fn download_and_install(url: impl AsRef<str>, output_directory: &Path) -> io::Re
         output_directory.to_str().unwrap()
     );
     binaries::unpack(Cursor::new(archive), output_directory)?;
-    // TODO: verify key?
-    println!("INSTALLING BINDINGS");
-    fs::copy(output_directory.join("bindings.rs"), SRC_BINDINGS_RS)?;
+    // TODO: verify key
 
     Ok(())
 }

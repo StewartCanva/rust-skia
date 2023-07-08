@@ -1,9 +1,9 @@
-use crate::{artifact, drivers::DrawingDriver};
+use crate::{artifact, drivers::DrawingDriver, Driver};
 use ash::{
     vk::{self, Handle},
     Entry, Instance,
 };
-use skia_safe::{gpu, Budgeted, Canvas, ImageInfo, Surface};
+use skia_safe::{gpu, Canvas, ImageInfo, Surface};
 use std::{convert::TryInto, ffi::CString, os::raw, path::Path, ptr};
 
 #[allow(dead_code)]
@@ -14,7 +14,7 @@ pub struct Vulkan {
 }
 
 impl DrawingDriver for Vulkan {
-    const NAME: &'static str = "vulkan";
+    const DRIVER: Driver = Driver::Vulkan;
 
     fn new() -> Self {
         let ash_graphics = unsafe { AshGraphics::new("skia-org") };
@@ -61,7 +61,7 @@ impl DrawingDriver for Vulkan {
         let image_info = ImageInfo::new_n32_premul((width * 2, height * 2), None);
         let mut surface = Surface::new_render_target(
             &mut self.context,
-            Budgeted::Yes,
+            gpu::Budgeted::Yes,
             &image_info,
             None,
             gpu::SurfaceOrigin::TopLeft,
@@ -95,7 +95,7 @@ impl Drop for AshGraphics {
 // most code copied from here: https://github.com/MaikKlein/ash/blob/master/examples/src/lib.rs
 impl AshGraphics {
     pub fn vulkan_version() -> Option<(usize, usize, usize)> {
-        let entry = unsafe { Entry::new() }.unwrap();
+        let entry = unsafe { Entry::load() }.unwrap();
 
         let detected_version = entry.try_enumerate_instance_version().unwrap_or(None);
 
@@ -109,7 +109,7 @@ impl AshGraphics {
     }
 
     pub unsafe fn new(app_name: &str) -> AshGraphics {
-        let entry = Entry::new().unwrap();
+        let entry = Entry::load().unwrap();
 
         let minimum_version = vk::make_api_version(0, 1, 0, 0);
 

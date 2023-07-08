@@ -1,21 +1,9 @@
 use crate::{
     gradient_shader, prelude::*, scalar, Color, ColorFilter, Image, Matrix, NativeFlattenable,
-    Point, TileMode,
+    TileMode,
 };
 use skia_bindings::{self as sb, SkFlattenable, SkRefCntBase, SkShader};
 use std::fmt;
-
-pub use skia_bindings::SkShader_GradientType as GradientTypeInternal;
-variant_name!(GradientTypeInternal::Linear, gradient_type_internal_naming);
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum GradientType {
-    Color,
-    Linear(Point, Point),
-    Radial(Point, scalar),
-    Conical([(Point, scalar); 2]),
-    Sweep(Point),
-}
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct GradientInfo<'a> {
@@ -33,6 +21,7 @@ impl<'a> GradientInfo<'a> {
 
 pub type Shader = RCHandle<SkShader>;
 unsafe_send_sync!(Shader);
+require_type_equality!(sb::SkShader_INHERITED, SkFlattenable);
 
 impl NativeBase<SkRefCntBase> for SkShader {}
 impl NativeBase<SkFlattenable> for SkShader {}
@@ -90,6 +79,7 @@ impl Shader {
         unsafe { sb::C_SkShader_isAImage(self.native()) }
     }
 
+    #[must_use]
     pub fn with_local_matrix(&self, matrix: &Matrix) -> Self {
         Self::from_ptr(unsafe {
             sb::C_SkShader_makeWithLocalMatrix(self.native(), matrix.native())
@@ -97,6 +87,7 @@ impl Shader {
         .unwrap()
     }
 
+    #[must_use]
     pub fn with_color_filter(&self, color_filter: impl Into<ColorFilter>) -> Self {
         Self::from_ptr(unsafe {
             sb::C_SkShader_makeWithColorFilter(self.native(), color_filter.into().into_ptr())
@@ -106,7 +97,7 @@ impl Shader {
 }
 
 pub mod shaders {
-    use crate::{prelude::*, Blender, Color, Color4f, ColorSpace, Shader};
+    use crate::{prelude::*, Blender, Color, Color4f, ColorSpace, Rect, Shader};
     use skia_bindings as sb;
 
     pub fn empty() -> Shader {
@@ -138,5 +129,11 @@ pub mod shaders {
             )
         })
         .unwrap()
+    }
+
+    pub fn coord_clamp(shader: impl Into<Shader>, rect: impl AsRef<Rect>) -> Option<Shader> {
+        Shader::from_ptr(unsafe {
+            sb::C_SkShaders_CoordClamp(shader.into().into_ptr(), rect.as_ref().native())
+        })
     }
 }

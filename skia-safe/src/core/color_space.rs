@@ -1,5 +1,6 @@
 use super::Data;
 use crate::prelude::*;
+use sb::SkNVRefCnt;
 use skia_bindings::{self as sb, SkColorSpace, SkColorSpacePrimaries};
 use std::fmt;
 
@@ -101,6 +102,7 @@ pub mod named_transfer_fn {
 
 pub type ColorSpace = RCHandle<SkColorSpace>;
 unsafe_send_sync!(ColorSpace);
+require_base_type!(SkColorSpace, SkNVRefCnt);
 
 impl NativeRefCounted for SkColorSpace {
     fn _ref(&self) {
@@ -129,12 +131,12 @@ impl fmt::Debug for ColorSpace {
 }
 
 impl ColorSpace {
-    pub fn new_srgb() -> ColorSpace {
-        ColorSpace::from_ptr(unsafe { sb::C_SkColorSpace_MakeSRGB() }).unwrap()
+    pub fn new_srgb() -> Self {
+        Self::from_ptr(unsafe { sb::C_SkColorSpace_MakeSRGB() }).unwrap()
     }
 
-    pub fn new_srgb_linear() -> ColorSpace {
-        ColorSpace::from_ptr(unsafe { sb::C_SkColorSpace_MakeSRGBLinear() }).unwrap()
+    pub fn new_srgb_linear() -> Self {
+        Self::from_ptr(unsafe { sb::C_SkColorSpace_MakeSRGBLinear() }).unwrap()
     }
 
     pub fn to_xyzd50_hash(&self) -> XYZD50Hash {
@@ -142,17 +144,18 @@ impl ColorSpace {
     }
 
     #[must_use]
-    pub fn with_linear_gamma(&self) -> ColorSpace {
-        ColorSpace::from_ptr(unsafe { sb::C_SkColorSpace_makeLinearGamma(self.native()) }).unwrap()
+    pub fn with_linear_gamma(&self) -> Self {
+        Self::from_ptr(unsafe { sb::C_SkColorSpace_makeLinearGamma(self.native()) }).unwrap()
     }
 
     #[must_use]
-    pub fn with_srgb_gamma(&self) -> ColorSpace {
-        ColorSpace::from_ptr(unsafe { sb::C_SkColorSpace_makeSRGBGamma(self.native()) }).unwrap()
+    pub fn with_srgb_gamma(&self) -> Self {
+        Self::from_ptr(unsafe { sb::C_SkColorSpace_makeSRGBGamma(self.native()) }).unwrap()
     }
 
-    pub fn with_color_spin(&self) -> ColorSpace {
-        ColorSpace::from_ptr(unsafe { sb::C_SkColorSpace_makeColorSpin(self.native()) }).unwrap()
+    #[must_use]
+    pub fn with_color_spin(&self) -> Self {
+        Self::from_ptr(unsafe { sb::C_SkColorSpace_makeColorSpin(self.native()) }).unwrap()
     }
 
     pub fn is_srgb(&self) -> bool {
@@ -165,13 +168,11 @@ impl ColorSpace {
 
     // TODO: writeToMemory()?
 
-    pub fn deserialize(data: impl Into<Data>) -> ColorSpace {
+    pub fn deserialize(data: impl Into<Data>) -> Self {
         let data = data.into();
         let bytes = data.as_bytes();
-        ColorSpace::from_ptr(unsafe {
-            sb::C_SkColorSpace_Deserialize(bytes.as_ptr() as _, bytes.len())
-        })
-        .unwrap()
+        Self::from_ptr(unsafe { sb::C_SkColorSpace_Deserialize(bytes.as_ptr() as _, bytes.len()) })
+            .unwrap()
     }
 
     // TODO: transferFn()

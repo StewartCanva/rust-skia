@@ -3,10 +3,10 @@ use skia_bindings::{self as sb, SkRRect};
 use std::{fmt, mem, ptr};
 
 pub use skia_bindings::SkRRect_Type as Type;
-variant_name!(Type::Complex, rrect_type_naming);
+variant_name!(Type::Complex);
 
 pub use skia_bindings::SkRRect_Corner as Corner;
-variant_name!(Corner::LowerLeft, rrect_corner_naming);
+variant_name!(Corner::LowerLeft);
 
 #[derive(Copy, Clone)]
 #[repr(transparent)]
@@ -210,6 +210,7 @@ impl RRect {
         *self = self.with_inset(delta)
     }
 
+    #[must_use]
     pub fn with_inset(&self, delta: impl Into<Vector>) -> Self {
         let delta = delta.into();
         let mut r = Self::default();
@@ -221,6 +222,7 @@ impl RRect {
         *self = self.with_outset(delta)
     }
 
+    #[must_use]
     pub fn with_outset(&self, delta: impl Into<Vector>) -> Self {
         self.with_inset(-delta.into())
     }
@@ -229,6 +231,7 @@ impl RRect {
         Rect::from_native_ref_mut(&mut self.native_mut().fRect).offset(delta)
     }
 
+    #[must_use]
     pub fn with_offset(&self, delta: impl Into<Vector>) -> Self {
         let mut copied = *self;
         copied.offset(delta);

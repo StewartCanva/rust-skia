@@ -1,14 +1,13 @@
-use std::fmt;
-
 use crate::{
     gpu::{BackendAPI, BackendFormat, DirectContext, Renderable},
-    image,
     prelude::*,
-    ColorType,
+    ColorType, TextureCompressionType,
 };
 use skia_bindings::{self as sb, GrRecordingContext, SkRefCntBase};
+use std::fmt;
 
 pub type RecordingContext = RCHandle<GrRecordingContext>;
+require_type_equality!(sb::GrRecordingContext_INHERITED, sb::GrImageContext);
 
 impl NativeRefCountedBase for GrRecordingContext {
     type Base = SkRefCntBase;
@@ -59,7 +58,7 @@ impl RecordingContext {
     // From GrContext_Base
     pub fn compressed_backend_format(
         &self,
-        compression_type: image::CompressionType,
+        compression_type: TextureCompressionType,
     ) -> BackendFormat {
         let mut format = BackendFormat::new_invalid();
         unsafe {
@@ -104,8 +103,10 @@ impl RecordingContext {
 
     pub fn max_surface_sample_count_for_color_type(&self, color_type: ColorType) -> usize {
         unsafe {
-            self.native()
-                .maxSurfaceSampleCountForColorType(color_type.into_native())
+            sb::C_GrRecordingContext_maxSurfaceSampleCountForColorType(
+                self.native(),
+                color_type.into_native(),
+            )
         }
         .try_into()
         .unwrap()

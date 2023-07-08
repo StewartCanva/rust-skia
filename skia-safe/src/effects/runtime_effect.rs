@@ -7,7 +7,7 @@ use sb::{SkFlattenable, SkRuntimeEffect_Child};
 use skia_bindings::{
     self as sb, SkRefCntBase, SkRuntimeEffect, SkRuntimeEffect_Options, SkRuntimeEffect_Uniform,
 };
-use std::{ffi::CStr, fmt, marker::PhantomData, ops::DerefMut, ptr};
+use std::{fmt, marker::PhantomData, ops::DerefMut, ptr};
 
 pub type Uniform = Handle<SkRuntimeEffect_Uniform>;
 unsafe_send_sync!(Uniform);
@@ -52,6 +52,10 @@ impl Uniform {
         self.flags().contains(uniform::Flags::ARRAY)
     }
 
+    pub fn is_color(&self) -> bool {
+        self.flags().contains(uniform::Flags::COLOR)
+    }
+
     pub fn size_in_bytes(&self) -> usize {
         unsafe { self.native().sizeInBytes() }
     }
@@ -61,18 +65,22 @@ pub mod uniform {
     use skia_bindings as sb;
 
     pub use sb::SkRuntimeEffect_Uniform_Type as Type;
-    variant_name!(Type::Float2x2, type_naming);
+    variant_name!(Type::Float2x2);
 
     bitflags! {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct Flags : u32 {
             const ARRAY = sb::SkRuntimeEffect_Uniform_Flags_kArray_Flag as _;
-            const SRGB_UNPREMUL = sb::SkRuntimeEffect_Uniform_Flags_kSRGBUnpremul_Flag as _;
+            const COLOR = sb::SkRuntimeEffect_Uniform_Flags_kColor_Flag as _;
+            const VERTEX = sb::SkRuntimeEffect_Uniform_Flags_kVertex_Flag as _;
+            const FRAGMENT = sb::SkRuntimeEffect_Uniform_Flags_kFragment_Flag as _;
+            const HALF_PRECISION = sb::SkRuntimeEffect_Uniform_Flags_kHalfPrecision_Flag as _;
         }
     }
 }
 
 pub use sb::SkRuntimeEffect_ChildType as ChildType;
-variant_name!(ChildType::Shader, child_type_naming);
+variant_name!(ChildType::Shader);
 
 #[deprecated(since = "0.41.0", note = "Use Child")]
 pub type Varying = Child;
@@ -119,9 +127,9 @@ impl NativeRefCountedBase for SkRuntimeEffect {
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Options {
-    pub force_no_inline: bool,
-    enforce_es2_restrictions: bool,
-    allow_frag_coord: bool,
+    pub force_unoptimized: bool,
+    use_private_rt_shader_module: bool,
+    max_version_allowed: sb::SkSL_Version,
 }
 
 native_transmutable!(SkRuntimeEffect_Options, Options, options_layout);
@@ -129,9 +137,9 @@ native_transmutable!(SkRuntimeEffect_Options, Options, options_layout);
 impl Default for Options {
     fn default() -> Self {
         Options {
-            force_no_inline: false,
-            enforce_es2_restrictions: true,
-            allow_frag_coord: false,
+            force_unoptimized: false,
+            use_private_rt_shader_module: false,
+            max_version_allowed: sb::SkSL_Version::k100,
         }
     }
 }
@@ -142,6 +150,9 @@ impl fmt::Debug for RuntimeEffect {
             .field("uniform_size", &self.uniform_size())
             .field("uniforms", &self.uniforms())
             .field("children", &self.children())
+            .field("allow_shader", &self.allow_shader())
+            .field("allow_color_filter", &self.allow_color_filter())
+            .field("allow_blender", &self.allow_blender())
             .finish()
     }
 }
@@ -195,7 +206,6 @@ impl RuntimeEffect {
         uniforms: impl Into<Data>,
         children: &[ChildPtr],
         local_matrix: impl Into<Option<&'a Matrix>>,
-        is_opaque: bool,
     ) -> Option<Shader> {
         let mut children: Vec<_> = children
             .iter()
@@ -212,7 +222,6 @@ impl RuntimeEffect {
                 children_ptr,
                 children.len(),
                 local_matrix.into().native_ptr_or_null(),
-                is_opaque,
             )
         })
     }
@@ -296,6 +305,8 @@ impl RuntimeEffect {
         })
     }
 
+    // TODO: wrap MakeTraced
+
     pub fn source(&self) -> &str {
         let mut len = 0;
         let ptr = unsafe { sb::C_SkRuntimeEffect_source(self.native(), &mut len) };
@@ -333,20 +344,34 @@ impl RuntimeEffect {
     }
 
     #[deprecated(since = "0.35.0", note = "Use find_uniform()")]
-    pub fn find_input(&self, name: impl AsRef<CStr>) -> Option<&Uniform> {
+    pub fn find_input(&self, name: impl AsRef<str>) -> Option<&Uniform> {
         self.find_uniform(name)
     }
 
-    pub fn find_uniform(&self, name: impl AsRef<CStr>) -> Option<&Uniform> {
-        unsafe { self.native().findUniform(name.as_ref().as_ptr()) }
+    pub fn find_uniform(&self, name: impl AsRef<str>) -> Option<&Uniform> {
+        let name = name.as_ref().as_bytes();
+        unsafe { sb::C_SkRuntimeEffect_findUniform(self.native(), name.as_ptr() as _, name.len()) }
             .into_option()
             .map(|ptr| Uniform::from_native_ref(unsafe { &*ptr }))
     }
 
-    pub fn find_child(&self, name: impl AsRef<CStr>) -> Option<&Child> {
-        unsafe { self.native().findChild(name.as_ref().as_ptr()) }
+    pub fn find_child(&self, name: impl AsRef<str>) -> Option<&Child> {
+        let name = name.as_ref().as_bytes();
+        unsafe { sb::C_SkRuntimeEffect_findChild(self.native(), name.as_ptr() as _, name.len()) }
             .into_option()
             .map(|ptr| Child::from_native_ref(unsafe { &*ptr }))
+    }
+
+    pub fn allow_shader(&self) -> bool {
+        unsafe { sb::C_SkRuntimeEffect_allowShader(self.native()) }
+    }
+
+    pub fn allow_color_filter(&self) -> bool {
+        unsafe { sb::C_SkRuntimeEffect_allowColorFilter(self.native()) }
+    }
+
+    pub fn allow_blender(&self) -> bool {
+        unsafe { sb::C_SkRuntimeEffect_allowBlender(self.native()) }
     }
 }
 
@@ -374,6 +399,8 @@ impl From<Blender> for ChildPtr {
         Self::Blender(blender)
     }
 }
+
+// TODO: Create `ChildPtr` from a Flattenable?
 
 impl ChildPtr {
     pub fn ty(&self) -> ChildType {
@@ -408,4 +435,5 @@ impl ChildPtr {
     }
 }
 
-// TODO: wrap SkRuntimeEffectBuilder, SkRuntimeShaderBuilder, SkRuntimeBlendBuilder
+// TODO: wrap SkRuntimeEffectBuilder, SkRuntimeShaderBuilder, SkRuntimeColorFilterBuilder,
+// SkRuntimeBlendBuilder

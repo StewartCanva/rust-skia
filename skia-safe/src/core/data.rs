@@ -8,6 +8,7 @@ use std::{
 
 pub type Data = RCHandle<SkData>;
 unsafe_send_sync!(Data);
+require_base_type!(SkData, sb::SkNVRefCnt);
 
 impl NativeRefCounted for SkData {
     fn _ref(&self) {
@@ -84,6 +85,10 @@ impl Data {
         Data::from_ptr(sb::C_SkData_MakeUninitialized(length)).unwrap()
     }
 
+    pub fn new_zero_initialized(length: usize) -> Data {
+        Data::from_ptr(unsafe { sb::C_SkData_MakeZeroInitialized(length) }).unwrap()
+    }
+
     // TODO: use Range as stand in for offset / length?
     pub fn new_subset(data: &Data, offset: usize, length: usize) -> Data {
         Data::from_ptr(unsafe { sb::C_SkData_MakeSubset(data.native(), offset, length) }).unwrap()
@@ -91,9 +96,9 @@ impl Data {
 
     /// Constructs Data from a copy of a &str.
     ///
-    /// Functions that use Data as a string container usually expect it to contain
-    /// a c-string including the terminating 0 byte, so this function converts
-    /// the string to a CString and forwards it to new_cstr().
+    /// Functions that use `Data` as a string container usually expect it to contain a c-string
+    /// including the terminating 0 byte, so this function converts the Rust `str` to a `CString`
+    /// and calls [`Self::new_cstr()`].
     pub fn new_str(str: impl AsRef<str>) -> Data {
         Self::new_cstr(&CString::new(str.as_ref()).unwrap())
     }
