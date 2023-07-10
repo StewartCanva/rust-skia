@@ -88,6 +88,10 @@ The Cargo feature `textlayout` enables text shaping with Harfbuzz and ICU by pro
 
 The skshaper module can be accessed through `skia_safe::Shaper` and the Rust bindings for skparagraph are in the `skia_safe::textlayout` module. 
 
+### `svg`
+
+This feature enables support for rendering SVG files (`svg::Dom`).
+
 ### `webp-encode`, `webp-decode`, `webp`
 
 `webp-encode` enables support for encoding Skia bitmaps and images to the [WEBP](https://en.wikipedia.org/wiki/WebP) image format, and `web-decode` enables support for decoding WEBP to Skia bitmaps and images. The `webp` feature can be used as a shorthand to enable the `webp-encode` and `webp-decode` features.
@@ -105,6 +109,10 @@ If this feature is disabled, the `icudtl.dat` file needs to be copied from the b
 The output directory is displayed when skia-bindings is compiled with `cargo build -vv | grep "ninja: Entering directory"`, 
 
 Simple examples of how to use the `skshaper` and `skparagraph` module bindings can be found [in the skia-org example command line application](https://github.com/rust-skia/rust-skia/blob/master/skia-org/src/).
+
+### `embed-freetype`
+
+On most platforms, Skia builds and runs well with the [FreeType](https://freetype.org/) version that is already installed. If you encounter FreeType related build errors on older platforms (like with for example Debian 9 "stretch"), `embed-freetype` makes sure that FreeType is built and embedded alongside with Skia.
 
 ## Multithreading
 

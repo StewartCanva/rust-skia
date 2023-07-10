@@ -29,6 +29,7 @@ impl V2 {
         self.x * b.y - self.y * b.x
     }
 
+    #[must_use]
     pub fn normalize(self) -> Self {
         self * (1.0 / self.length())
     }
@@ -104,6 +105,14 @@ impl Mul<V2> for scalar {
     }
 }
 
+impl Div<V2> for scalar {
+    type Output = V2;
+
+    fn div(self, v: V2) -> Self::Output {
+        V2::new(self / v.x, self / v.y)
+    }
+}
+
 impl Div<scalar> for V2 {
     type Output = V2;
     fn div(self, s: scalar) -> Self::Output {
@@ -160,6 +169,7 @@ impl V3 {
         self.x * b.x + self.y * b.y + self.z * b.z
     }
 
+    #[must_use]
     pub fn cross(&self, b: &Self) -> Self {
         Self::new(
             self.y * b.z - self.z * b.y,
@@ -168,6 +178,7 @@ impl V3 {
         )
     }
 
+    #[must_use]
     pub fn normalize(&self) -> Self {
         *self * (1.0 / self.length())
     }
@@ -700,8 +711,8 @@ impl M44 {
         unsafe { self.native().invert(m.native_mut()) }.if_true_some(m)
     }
 
-    #[warn(unused)]
-    pub fn transpose(&self) -> M44 {
+    #[must_use]
+    pub fn transpose(&self) -> Self {
         Self::construct(|m| unsafe { sb::C_SkM44_transpose(self.native(), m) })
     }
 
