@@ -1,4 +1,4 @@
-runs-on: macos-11
+runs-on: macos-12
 env:
   SKIA_DEBUG: $[[skiaDebug]]
   MACOSX_DEPLOYMENT_TARGET: '$[[macosxDeploymentTarget]]'
@@ -15,7 +15,3 @@ steps:
 
 - name: Install Clippy
   run: rustup component add clippy
-
-# remove LLVM on macOS so that only Apple's clang is used
-- name: Remove LLVM (macOS)
-  run: brew uninstall llvm

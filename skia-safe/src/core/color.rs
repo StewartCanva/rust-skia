@@ -103,7 +103,7 @@ impl Color {
     pub const TRANSPARENT: Self = Self(sb::SK_ColorTRANSPARENT);
     pub const BLACK: Self = Self(sb::SK_ColorBLACK);
     pub const DARK_GRAY: Self = Self(sb::SK_ColorDKGRAY);
-    pub const GRAY: Self = Self(sb::SK_ColorLTGRAY);
+    pub const GRAY: Self = Self(sb::SK_ColorGRAY);
     pub const LIGHT_GRAY: Self = Self(sb::SK_ColorLTGRAY);
     pub const WHITE: Self = Self(sb::SK_ColorWHITE);
     pub const RED: Self = Self(sb::SK_ColorRED);
@@ -330,7 +330,7 @@ impl Color4f {
 
     pub fn to_color(self) -> Color {
         fn c(f: f32) -> u8 {
-            (f.max(0.0).min(1.0) * 255.0) as u8
+            (f.clamp(0.0, 1.0) * 255.0) as u8
         }
         let a = c(self.a);
         let r = c(self.r);
@@ -342,9 +342,18 @@ impl Color4f {
     // TODO: FromPMColor
     // TODO: premul()
     // TODO: unpremul()
-    // TODO: toBytes_RGBA()
-    // TODO: FromBytes_RGBA
 
+    #[must_use]
+    pub fn to_bytes(self) -> u32 {
+        unsafe { sb::C_SkColor4f_toBytes_RGBA(self.native()) }
+    }
+
+    #[must_use]
+    pub fn from_bytes_rgba(color: u32) -> Self {
+        Self::from_native_c(unsafe { sb::C_SkColor4f_FromBytes_RGBA(color) })
+    }
+
+    #[must_use]
     pub fn to_opaque(self) -> Self {
         Self { a: 1.0, ..self }
     }

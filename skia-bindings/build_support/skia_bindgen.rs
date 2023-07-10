@@ -1,6 +1,5 @@
 //! Full build support for the SkiaBindings library, and bindings.rs file.
-
-use crate::build_support::{android, binaries_config, cargo, features, ios, xcode};
+use crate::build_support::{binaries_config, cargo, cargo::Target, features, platform};
 use bindgen::{CodegenConfig, EnumVariation, RustTarget};
 use cc::Build;
 use std::path::{Path, PathBuf};
@@ -14,7 +13,7 @@ pub mod env {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct FinalBuildConfiguration {
+pub struct Configuration {
     /// The binding source files to compile.
     pub binding_sources: Vec<PathBuf>,
 
@@ -25,12 +24,12 @@ pub struct FinalBuildConfiguration {
     pub definitions: Definitions,
 }
 
-impl FinalBuildConfiguration {
-    pub fn from_build_configuration(
+impl Configuration {
+    pub fn new(
         features: &features::Features,
         definitions: Definitions,
         skia_source_dir: &Path,
-    ) -> FinalBuildConfiguration {
+    ) -> Self {
         let binding_sources = {
             let mut sources: Vec<PathBuf> = vec!["src/bindings.cpp".into()];
             if features.gl {
@@ -51,11 +50,13 @@ impl FinalBuildConfiguration {
             if features.text_layout {
                 sources.extend(vec!["src/shaper.cpp".into(), "src/paragraph.cpp".into()]);
             }
-            sources.push("src/svg.cpp".into());
+            if features.svg {
+                sources.push("src/svg.cpp".into());
+            }
             sources
         };
 
-        FinalBuildConfiguration {
+        Self {
             skia_source_dir: skia_source_dir.into(),
             binding_sources,
             definitions,
@@ -63,7 +64,12 @@ impl FinalBuildConfiguration {
     }
 }
 
-pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
+pub fn generate_bindings(
+    build: &Configuration,
+    output_directory: &Path,
+    target: Target,
+    sysroot: Option<&str>,
+) {
     let mut builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
@@ -127,9 +133,8 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         .clang_args(&["-x", "c++"])
         .clang_arg("-v");
 
-    let target = cargo::target();
-
-    // Don't generate destructors for Windows targets: https://github.com/rust-skia/rust-skia/issues/318
+    // Don't generate destructors for Windows targets:
+    // <https://github.com/rust-skia/rust-skia/issues/318>
     if target.is_windows() {
         builder = builder.with_codegen_config({
             let mut config = CodegenConfig::default();
@@ -139,7 +144,7 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
     }
 
     // 32-bit Windows needs `thiscall` support.
-    // https://github.com/rust-skia/rust-skia/issues/540
+    // <https://github.com/rust-skia/rust-skia/issues/540>
     if target.is_windows() && target.architecture == "i686" {
         builder = builder.rust_target(RustTarget::Nightly);
     }
@@ -165,10 +170,14 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         builder = builder.header(source);
     }
 
+    let mut bindgen_args = Vec::new();
+    let mut cc_defines = Vec::new();
+    let mut cc_args = Vec::new();
+
     let include_path = &build.skia_source_dir;
     cargo::rerun_if_file_changed(include_path.join("include"));
 
-    builder = builder.clang_arg(format!("-I{}", include_path.display()));
+    bindgen_args.push(format!("-I{}", include_path.display()));
     cc_build.include(include_path);
 
     // Whether GIF decoding is supported,
@@ -184,86 +193,76 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
     for (name, value) in &build.definitions {
         match value {
             Some(value) => {
-                cc_build.define(name, value.as_str());
-                builder = builder.clang_arg(format!("-D{}={}", name, value));
+                cc_defines.push((name, value.as_str()));
+                bindgen_args.push(format!("-D{}={}", name, value));
             }
             None => {
-                cc_build.define(name, "");
-                builder = builder.clang_arg(format!("-D{}", name));
+                cc_defines.push((name, ""));
+                bindgen_args.push(format!("-D{}", name));
             }
         }
     }
 
     cc_build.cpp(true).out_dir(output_directory);
 
-    if !cfg!(windows) {
-        cc_build.flag("-std=c++17");
+    {
+        let cpp17 = if target.builds_with_msvc() {
+            // m100: See also skia/BUILD.gn `config("cpp17")`
+            "/std:c++17"
+        } else {
+            "-std=c++17"
+        };
+        cc_args.push(cpp17.into());
     }
-
-    let target = cargo::target();
 
     let target_str = &target.to_string();
     cc_build.target(target_str);
+    bindgen_args.push(format!("--target={}", target_str));
 
-    let sdk;
-    let sysroot = cargo::env_var("SDKROOT");
-    let mut sysroot: Option<&str> = sysroot.as_ref().map(AsRef::as_ref);
-    let mut sysroot_flag = "--sysroot=";
-
-    match target.as_strs() {
-        (_, "apple", "darwin", _) => {
-            // macOS uses `-isysroot/path/to/sysroot`, but this doesn't appear
-            // to work for other targets. `--sysroot=` works for all targets,
-            // to my knowledge, but doesn't seem to be idiomatic for macOS
-            // compilation. To capture this, we allow manually setting sysroot
-            // on any platform, but we use `-isysroot` for OSX builds and `--sysroot`
-            // elsewhere. If you don't manually set the sysroot, we can automatically
-            // detect it, but this is only possible for macOS.
-            sysroot_flag = "-isysroot";
-
-            if sysroot.is_none() {
-                if let Some(macos_sdk) = xcode::get_sdk_path("macosx") {
-                    sdk = macos_sdk;
-                    sysroot = Some(
-                        sdk.to_str()
-                            .expect("macOS SDK path could not be converted to string"),
-                    );
-                } else {
-                    cargo::warning("failed to get macosx SDK path")
-                }
-            }
-        }
-        (arch, "linux", "android", _) | (arch, "linux", "androideabi", _) => {
-            for arg in android::additional_clang_args(target_str, arch) {
-                builder = builder.clang_arg(arg);
-            }
-        }
-        (arch, "apple", "ios", abi) => {
-            for arg in ios::additional_clang_args(arch, abi) {
-                builder = builder.clang_arg(arg);
-            }
-        }
-        _ => {}
+    // Platform specific arguments and flags.
+    {
+        let (bindgen, cc) = platform::bindgen_and_cc_args(&target, sysroot);
+        bindgen_args.extend(bindgen);
+        cc_args.extend(cc);
     }
 
-    if let Some(sysroot) = sysroot {
-        let sysroot = format!("{}{}", sysroot_flag, sysroot);
-        builder = builder.clang_arg(&sysroot);
-        cc_build.flag(&sysroot);
+    {
+        println!("COMPILING BINDINGS: {:?}", build.binding_sources);
+        println!(
+            "  DEFINES: {}",
+            cc_defines
+                .iter()
+                .map(|(n, v)| format!("{n}={v}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        println!("  ARGS: {}", cc_args.join(" "));
+
+        for (var, val) in cc_defines {
+            cc_build.define(var, val);
+        }
+
+        for arg in cc_args {
+            cc_build.flag(&arg);
+        }
+
+        // we add skia-bindings later on.
+        cc_build.cargo_metadata(false);
+        cc_build.compile(binaries_config::lib::SKIA_BINDINGS);
     }
 
-    println!("COMPILING BINDINGS: {:?}", build.binding_sources);
-    // we add skia-bindings later on.
-    cc_build.cargo_metadata(false);
-    cc_build.compile(binaries_config::lib::SKIA_BINDINGS);
+    {
+        println!("GENERATING BINDINGS");
+        println!("  ARGS: {}", bindgen_args.join(" "));
 
-    println!("GENERATING BINDINGS");
-    let bindings = builder.generate().expect("Unable to generate bindings");
+        builder = builder.clang_args(bindgen_args);
 
-    let out_path = PathBuf::from("src");
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+        let bindings = builder.generate().expect("Unable to generate bindings");
+        let out_path = PathBuf::from("src");
+        bindings
+            .write_to_file(out_path.join("bindings.rs"))
+            .expect("Couldn't write bindings!");
+    }
 }
 
 const ALLOWLISTED_FUNCTIONS: &[&str] = &[
@@ -413,6 +412,13 @@ const OPAQUE_TYPES: &[&str] = &[
     "std::tuple_.*",
     // m93: private, exposed by Paint::asBlendMode(), fails layout tests.
     "skstd::optional",
+    // m100
+    "std::optional",
+    // Feature `svg`:
+    "SkSVGNode",
+    "skresources::ResourceProvider",
+    // m107 (layout failure)
+    "skgpu::VulkanMemoryAllocator",
 ];
 
 const BLOCKLISTED_TYPES: &[&str] = &[
@@ -433,6 +439,10 @@ const BLOCKLISTED_TYPES: &[&str] = &[
     // Linux LLVM9 c++17 with SKIA_DEBUG=1
     "std::__cxx.*",
     "std::array.*",
+    // These two are not used with feature `svg` and conflict with the `Type` rewriter that would
+    // create invalid identifiers.
+    "SkSVGFontWeight",
+    "SkSVGFontWeight_Type",
 ];
 
 #[derive(Debug)]
@@ -542,7 +552,8 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("ContentChangeMode", rewrite::k_xxx_name),
     ("BackendHandleAccess", rewrite::k_xxx_name),
     // SkTextUtils_Align
-    ("Align", rewrite::k_xxx_name),
+    // We need name_opt to cover SkSVGPreserveAspectRatio_Align
+    ("Align", rewrite::k_xxx_name_opt),
     // SkTrimPathEffect_Mode
     ("Mode", rewrite::k_xxx),
     // SkTypeface_SerializeBehavior
@@ -624,7 +635,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
 ];
 
 pub(crate) mod rewrite {
-    use heck::ShoutySnakeCase;
+    use heck::ToShoutySnakeCase;
     use regex::Regex;
 
     pub fn k_xxx_uppercase(name: &str, variant: &str) -> String {
@@ -681,10 +692,12 @@ pub use definitions::{Definition, Definitions};
 pub(crate) mod definitions {
     use super::env;
     use crate::build_support::features;
-    use std::collections::HashSet;
-    use std::fs;
-    use std::io::Write;
-    use std::path::{Path, PathBuf};
+    use std::{
+        collections::HashSet,
+        fs,
+        io::Write,
+        path::{Path, PathBuf},
+    };
 
     /// A preprocessor definition.
     pub type Definition = (String, Option<String>);
@@ -755,6 +768,9 @@ pub(crate) mod definitions {
                 "obj/modules/skshaper/skshaper.ninja".into(),
                 "obj/modules/skparagraph/skparagraph.ninja".into(),
             ]);
+        }
+        if features.svg {
+            files.push("obj/modules/svg/svg.ninja".into());
         }
         files
     }
