@@ -19,6 +19,10 @@ impl PlatformDetails for MacOs {
 
         builder.target_os_and_default_cpu("mac");
         builder.cflags(flags());
+
+        builder
+            .arg("skia_use_system_freetype2", no())
+            .arg("skia_enable_fontmgr_custom_empty", yes());
     }
 
     fn bindgen_args(&self, _target: &Target, builder: &mut BindgenArgsBuilder) {
