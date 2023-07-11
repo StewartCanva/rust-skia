@@ -1,4 +1,8 @@
-use build_support::{binaries_config, cargo, features, skia, skia_bindgen};
+use build_support::{
+    binaries_config,
+    cargo::{self, Target},
+    features, skia, skia_bindgen,
+};
 
 mod build_support;
 
@@ -28,7 +32,7 @@ fn build_from_source(
     skia_source_dir: &std::path::Path,
     skia_debug: bool,
     offline: bool,
-) {
+) -> skia::FinalBuildConfiguration {
     let build_config = skia::BuildConfiguration::from_features(features, skia_debug);
     let final_configuration = skia::FinalBuildConfiguration::from_build_configuration(
         &build_config,
@@ -43,6 +47,8 @@ fn build_from_source(
         skia::env::gn_command(),
         offline,
     );
+
+    final_configuration
 }
 
 fn generate_bindings(
@@ -50,24 +56,23 @@ fn generate_bindings(
     definitions: Vec<skia_bindgen::Definition>,
     binaries_config: &binaries_config::BinariesConfiguration,
     skia_source_dir: &std::path::Path,
+    target: Target,
+    sysroot: Option<&str>,
 ) {
     // Emit the ninja definitions, to help debug build consistency.
     skia_bindgen::definitions::save_definitions(&definitions, &binaries_config.output_directory)
         .expect("failed to write Skia defines");
 
-    let bindings_config = skia_bindgen::FinalBuildConfiguration::from_build_configuration(
-        features,
-        definitions,
-        skia_source_dir,
+    let bindings_config = skia_bindgen::Configuration::new(features, definitions, skia_source_dir);
+    skia_bindgen::generate_bindings(
+        &bindings_config,
+        &binaries_config.output_directory,
+        target,
+        sysroot,
     );
-    skia_bindgen::generate_bindings(&bindings_config, &binaries_config.output_directory);
 }
 
 fn main() {
-    // since 0.25.0
-    if cfg!(feature = "svg") {
-        cargo::warning("The feature 'svg' has been removed. SVG and XML support is available in all build configurations.");
-    }
     // since 0.25.0
     if cfg!(feature = "shaper") {
         cargo::warning("The feature 'shaper' has been removed. To use the SkShaper bindings, enable the feature 'textlayout'.");
@@ -88,11 +93,18 @@ fn main() {
             binaries_config.import(&search_path, false).unwrap();
 
             let definitions = skia_bindgen::definitions::from_env();
-            generate_bindings(&features, definitions, &binaries_config, &source_dir);
+            generate_bindings(
+                &features,
+                definitions,
+                &binaries_config,
+                &source_dir,
+                cargo::target(),
+                None,
+            );
         } else {
             println!("STARTING OFFLINE BUILD");
 
-            build_from_source(
+            let final_build_configuration = build_from_source(
                 features.clone(),
                 &binaries_config,
                 &source_dir,
@@ -103,7 +115,17 @@ fn main() {
                 &features,
                 &binaries_config.output_directory,
             );
-            generate_bindings(&features, definitions, &binaries_config, &source_dir);
+            generate_bindings(
+                &features,
+                definitions,
+                &binaries_config,
+                &source_dir,
+                final_build_configuration.target,
+                final_build_configuration
+                    .sysroot
+                    .as_ref()
+                    .map(AsRef::as_ref),
+            );
         }
     } else {
         //
@@ -124,7 +146,7 @@ fn main() {
             println!("STARTING A FULL BUILD");
 
             let source_dir = std::env::current_dir().unwrap().join("skia");
-            build_from_source(
+            let final_build_configuration = build_from_source(
                 features.clone(),
                 &binaries_config,
                 &source_dir,
@@ -135,7 +157,17 @@ fn main() {
                 &features,
                 &binaries_config.output_directory,
             );
-            generate_bindings(&features, definitions, &binaries_config, &source_dir);
+            generate_bindings(
+                &features,
+                definitions,
+                &binaries_config,
+                &source_dir,
+                final_build_configuration.target,
+                final_build_configuration
+                    .sysroot
+                    .as_ref()
+                    .map(AsRef::as_ref),
+            );
         }
     };
 
@@ -143,6 +175,6 @@ fn main() {
 
     #[cfg(feature = "binary-cache")]
     if let Some(staging_directory) = build_support::binary_cache::should_export() {
-        build_support::binary_cache::publish(&binaries_config, &*staging_directory);
+        build_support::binary_cache::publish(&binaries_config, &staging_directory);
     }
 }

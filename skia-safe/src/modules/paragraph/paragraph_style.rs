@@ -1,6 +1,4 @@
-use std::fmt;
-
-use super::{DrawOptions, FontFamilies, TextAlign, TextDirection, TextStyle};
+use super::{FontFamilies, TextAlign, TextDirection, TextStyle};
 use crate::{
     interop::{self, AsStr, FromStrs, SetStr},
     modules::paragraph::TextHeightBehavior,
@@ -8,6 +6,7 @@ use crate::{
     scalar, FontStyle,
 };
 use skia_bindings as sb;
+use std::fmt;
 
 pub type StrutStyle = Handle<sb::skia_textlayout_StrutStyle>;
 unsafe_send_sync!(StrutStyle);
@@ -147,7 +146,7 @@ impl StrutStyle {
     }
 }
 
-// Can't use Handle<> here, std::u16string maintains an interior pointer.
+// Can't use `Handle<>` here, `std::u16string` maintains an interior pointer.
 pub type ParagraphStyle = RefHandle<sb::skia_textlayout_ParagraphStyle>;
 unsafe_send_sync!(ParagraphStyle);
 
@@ -190,7 +189,7 @@ impl fmt::Debug for ParagraphStyle {
             .field("ellipsized", &self.ellipsized())
             .field("effective_align", &self.effective_align())
             .field("hinting_is_on", &self.hinting_is_on())
-            .field("draw_options", &self.draw_options())
+            .field("replace_tab_characters", &self.replace_tab_characters())
             .finish()
     }
 }
@@ -301,12 +300,25 @@ impl ParagraphStyle {
         self
     }
 
-    pub fn draw_options(&self) -> DrawOptions {
-        self.native().fDrawingOptions
+    pub fn replace_tab_characters(&self) -> bool {
+        self.native().fReplaceTabCharacters
     }
 
-    pub fn set_draw_options(&mut self, value: DrawOptions) -> &mut Self {
-        self.native_mut().fDrawingOptions = value;
+    pub fn set_replace_tab_characters(&mut self, value: bool) -> &mut Self {
+        self.native_mut().fReplaceTabCharacters = value;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ParagraphStyle;
+
+    // Regression test for https://github.com/rust-skia/rust-skia/issues/607
+    #[test]
+    fn paragraph_style_supports_equality() {
+        let a = ParagraphStyle::default();
+        let b = ParagraphStyle::default();
+        assert_eq!(a, b)
     }
 }
