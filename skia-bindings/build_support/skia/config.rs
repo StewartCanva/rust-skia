@@ -81,10 +81,6 @@ impl FinalBuildConfiguration {
                 ("skia_use_libwebp_encode", yes_if(features.webp_encode)),
                 ("skia_use_libwebp_decode", yes_if(features.webp_decode)),
                 ("skia_use_system_zlib", yes_if(use_system_libraries)),
-                ("skia_use_freetype", yes()),
-                ("skia_use_fonthost_mac", no()),
-                ("skia_use_system_freetype2", no()),
-                ("skia_use_freetype_woff2", yes()),
                 ("skia_use_xps", no()),
                 ("skia_use_dng_sdk", yes_if(features.dng)),
                 ("cc", quote(&build.cc)),
@@ -133,6 +129,10 @@ impl FinalBuildConfiguration {
 
             if features.webp_encode || features.webp_decode {
                 args.push(("skia_use_system_libwebp", yes_if(use_system_libraries)))
+            }
+
+            if features.embed_freetype {
+                args.push(("skia_use_system_freetype2", no()));
             }
 
             let mut use_expat = true;
@@ -209,16 +209,14 @@ impl FinalBuildConfiguration {
                     // TODO: make API-level configurable?
                     args.push(("ndk_api", android::API_LEVEL.into()));
                     args.push(("target_cpu", quote(clang::target_arch(arch))));
-                    args.push(("skia_use_system_freetype2", yes_if(use_system_libraries)));
+                    if !features.embed_freetype {
+                        args.push(("skia_use_system_freetype2", yes_if(use_system_libraries)));
+                    }
                     args.push(("skia_enable_fontmgr_android", yes()));
                     // Enabling fontmgr_android implicitly enables expat.
                     // We make this explicit to avoid relying on an expat installed
                     // in the system.
                     use_expat = true;
-                }
-                (_, "apple", "darwin", _) => {
-                    args.push(("skia_use_system_freetype2", no()));
-                    args.push(("skia_enable_fontmgr_custom_empty", yes()));
                 }
                 (arch, _, "ios", abi) => {
                     args.push(("target_os", quote("ios")));
@@ -376,9 +374,11 @@ pub fn configure_skia(
         .output()
         .expect("gn error");
 
-    if output.status.code() != Some(0) {
-        panic!("{:?}", String::from_utf8(output.stdout).unwrap());
-    }
+    assert!(
+        output.status.code() == Some(0),
+        "{:?}",
+        String::from_utf8(output.stdout).unwrap()
+    );
 }
 
 /// Builds Skia.
