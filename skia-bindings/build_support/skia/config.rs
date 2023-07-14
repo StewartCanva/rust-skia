@@ -135,6 +135,10 @@ impl FinalBuildConfiguration {
                 args.push(("skia_use_system_libwebp", yes_if(use_system_libraries)))
             }
 
+            if features.embed_freetype {
+                args.push(("skia_use_system_freetype2", no()));
+            }
+
             let mut use_expat = true;
 
             // target specific gn args.
@@ -209,7 +213,9 @@ impl FinalBuildConfiguration {
                     // TODO: make API-level configurable?
                     args.push(("ndk_api", android::API_LEVEL.into()));
                     args.push(("target_cpu", quote(clang::target_arch(arch))));
-                    args.push(("skia_use_system_freetype2", yes_if(use_system_libraries)));
+                    if !features.embed_freetype {
+                        args.push(("skia_use_system_freetype2", yes_if(use_system_libraries)));
+                    }
                     args.push(("skia_enable_fontmgr_android", yes()));
                     // Enabling fontmgr_android implicitly enables expat.
                     // We make this explicit to avoid relying on an expat installed
@@ -376,9 +382,11 @@ pub fn configure_skia(
         .output()
         .expect("gn error");
 
-    if output.status.code() != Some(0) {
-        panic!("{:?}", String::from_utf8(output.stdout).unwrap());
-    }
+    assert!(
+        output.status.code() == Some(0),
+        "{:?}",
+        String::from_utf8(output.stdout).unwrap()
+    );
 }
 
 /// Builds Skia.
