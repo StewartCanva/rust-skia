@@ -196,7 +196,10 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
 
     cc_build.cpp(true).out_dir(output_directory);
 
-    if !cfg!(windows) {
+    if cfg!(windows) {
+        // m100: See also skia/BUILD.gn `config("cpp17")`
+        cc_build.flag("/std:c++17");
+    } else {
         cc_build.flag("-std=c++17");
     }
 
@@ -242,6 +245,40 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
             for arg in ios::additional_clang_args(arch, abi) {
                 builder = builder.clang_arg(arg);
             }
+        }
+        (arch, "unknown", "linux", Some("musl")) => {
+            let cpp = "10.3.1";
+            cc_build.include(format!("/usr/include/c++/{}", cpp));
+            cc_build.include(format!(
+                "/usr/include/c++/{}/{}-alpine-linux-musl",
+                cpp, arch
+            ));
+        }
+        ("wasm32", "unknown", "emscripten", _) => {
+            // visibility=default, otherwise some types may be missing:
+            // https://github.com/rust-lang/rust-bindgen/issues/751#issuecomment-555735577
+            builder = builder.clang_arg("-fvisibility=default");
+
+            let emsdk_base_dir = match std::env::var("EMSDK") {
+                Ok(val) => val,
+                Err(_e) => panic!("please set the EMSDK environment variable to the root of your Emscripten installation"),
+            };
+
+            // Add C++ includes (otherwise build will fail with <cmath> not found)
+            let add_sys_include = |builder: bindgen::Builder, path: &str| -> bindgen::Builder {
+                let cflag = format!(
+                    "-isystem{}/upstream/emscripten/system/{}",
+                    emsdk_base_dir, path
+                );
+                builder.clang_arg(&cflag)
+            };
+
+            builder = builder.clang_arg("-nobuiltininc");
+            builder = add_sys_include(builder, "lib/libc/musl/arch/emscripten");
+            builder = add_sys_include(builder, "lib/libc/musl/arch/generic");
+            builder = add_sys_include(builder, "lib/libcxx/include");
+            builder = add_sys_include(builder, "lib/libc/musl/include");
+            builder = add_sys_include(builder, "include");
         }
         _ => {}
     }
@@ -411,8 +448,8 @@ const OPAQUE_TYPES: &[&str] = &[
     "std::tuple",
     // Homebrew macOS LLVM 13
     "std::tuple_.*",
-    // m93: private, exposed by Paint::asBlendMode(), fails layout tests.
-    "skstd::optional",
+    // m100
+    "std::optional",
 ];
 
 const BLOCKLISTED_TYPES: &[&str] = &[
@@ -624,7 +661,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
 ];
 
 pub(crate) mod rewrite {
-    use heck::ShoutySnakeCase;
+    use heck::ToShoutySnakeCase;
     use regex::Regex;
 
     pub fn k_xxx_uppercase(name: &str, variant: &str) -> String {
