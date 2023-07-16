@@ -10,6 +10,9 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/d3d/GrD3DBackendContext.h"
 
+// Additional types not yet referenced.
+extern "C" void C_GrD3DTypes(GrD3DSurfaceInfo *) {};
+
 //
 // gpu/d3d/GrD3DTypes.h
 //
@@ -26,8 +29,13 @@ extern "C" void C_GrBackendFormat_ConstructDxgi(GrBackendFormat* uninitialized, 
     new(uninitialized)GrBackendFormat(GrBackendFormat::MakeDxgi(format));
 }
 
-extern "C" void C_GrBackendTexture_ConstructD3D(GrBackendTexture* uninitialized, int width, int height, const GrD3DTextureResourceInfo* resourceInfo) {
-    new(uninitialized)GrBackendTexture(width, height, *resourceInfo);
+extern "C" void C_GrBackendTexture_ConstructD3D(
+    GrBackendTexture* uninitialized, 
+    int width, int height, 
+    const GrD3DTextureResourceInfo* resourceInfo, 
+    const char* label,
+    size_t labelCount) {
+    new(uninitialized)GrBackendTexture(width, height, *resourceInfo, std::string_view(label, labelCount));
 }
 
 extern "C" void C_GrBackendRenderTarget_ConstructD3D(GrBackendRenderTarget* uninitialized, int width, int height, const GrD3DTextureResourceInfo* resourceInfo) {

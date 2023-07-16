@@ -59,7 +59,7 @@ pub fn add_link_search(dir: impl AsRef<str>) {
     println!("cargo:rustc-link-search={}", dir.as_ref());
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Target {
     pub architecture: String,
     pub vendor: String,
@@ -70,6 +70,10 @@ pub struct Target {
 impl Target {
     pub fn is_windows(&self) -> bool {
         self.system == "windows"
+    }
+
+    pub fn builds_with_msvc(&self) -> bool {
+        self.abi.as_deref() == Some("msvc")
     }
 
     /// Convert a library name to a filename.
@@ -89,6 +93,11 @@ impl Target {
             self.system.as_str(),
             self.abi.as_deref(),
         )
+    }
+
+    pub fn arch_abi(&self) -> (&str, Option<&str>) {
+        let (arch, _vendor, _system, abi) = self.as_strs();
+        (arch, abi)
     }
 }
 
@@ -114,7 +123,9 @@ pub fn target() -> Target {
 }
 
 pub fn target_crt_static() -> bool {
-    cfg!(target_feature = "crt-static")
+    env::var("CARGO_CFG_TARGET_FEATURE")
+        .map(|features| features.contains("crt-static"))
+        .unwrap_or(false)
 }
 
 pub fn host() -> Target {
@@ -123,12 +134,10 @@ pub fn host() -> Target {
     parse_target(host_str)
 }
 
-fn parse_target(target_str: impl AsRef<str>) -> Target {
+pub fn parse_target(target_str: impl AsRef<str>) -> Target {
     let target_str = target_str.as_ref();
     let target: Vec<String> = target_str.split('-').map(|s| s.into()).collect();
-    if target.len() < 3 {
-        panic!("Failed to parse TARGET {}", target_str);
-    }
+    assert!(target.len() >= 3, "Failed to parse TARGET {}", target_str);
 
     let abi = if target.len() > 3 {
         Some(target[3].clone())
@@ -178,8 +187,7 @@ pub fn package_version() -> String {
     env::var("CARGO_PKG_VERSION").unwrap().as_str().into()
 }
 
-/// Parses Cargo.toml and returns the metadadata specifed in the
-/// [package.metadata] section.
+/// Parses Cargo.toml and returns the metadata specified in the [package.metadata] section.
 pub fn get_metadata() -> Vec<(String, String)> {
     use toml::{de, value};
 
