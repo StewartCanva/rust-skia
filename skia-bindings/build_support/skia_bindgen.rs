@@ -1,6 +1,6 @@
 //! Full build support for the SkiaBindings library, and bindings.rs file.
 
-use crate::build_support::{android, binaries_config, cargo, features, ios, xcode};
+use crate::build_support::{android, binaries_config, cargo, cargo::Target, features, ios, xcode};
 use bindgen::{CodegenConfig, EnumVariation, RustTarget};
 use cc::Build;
 use std::path::{Path, PathBuf};
@@ -51,7 +51,9 @@ impl FinalBuildConfiguration {
             if features.text_layout {
                 sources.extend(vec!["src/shaper.cpp".into(), "src/paragraph.cpp".into()]);
             }
-            sources.push("src/svg.cpp".into());
+            if features.svg {
+                sources.push("src/svg.cpp".into());
+            }
             sources
         };
 
@@ -63,7 +65,12 @@ impl FinalBuildConfiguration {
     }
 }
 
-pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Path) {
+pub fn generate_bindings(
+    build: &FinalBuildConfiguration,
+    output_directory: &Path,
+    target: Target,
+    sysroot: Option<&str>,
+) {
     let mut builder = bindgen::Builder::default()
         .generate_comments(false)
         .layout_tests(true)
@@ -126,8 +133,6 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
         .clang_arg("-std=c++17")
         .clang_args(&["-x", "c++"])
         .clang_arg("-v");
-
-    let target = cargo::target();
 
     // Don't generate destructors for Windows targets: https://github.com/rust-skia/rust-skia/issues/318
     if target.is_windows() {
@@ -196,18 +201,19 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
 
     cc_build.cpp(true).out_dir(output_directory);
 
-    if !cfg!(windows) {
+    if cfg!(windows) {
+        // m100: See also skia/BUILD.gn `config("cpp17")`
+        cc_build.flag("/std:c++17");
+    } else {
         cc_build.flag("-std=c++17");
     }
 
-    let target = cargo::target();
-
     let target_str = &target.to_string();
     cc_build.target(target_str);
+    builder = builder.clang_arg(format!("--target={}", target_str));
 
     let sdk;
-    let sysroot = cargo::env_var("SDKROOT");
-    let mut sysroot: Option<&str> = sysroot.as_ref().map(AsRef::as_ref);
+    let mut sysroot = sysroot;
     let mut sysroot_flag = "--sysroot=";
 
     match target.as_strs() {
@@ -242,6 +248,40 @@ pub fn generate_bindings(build: &FinalBuildConfiguration, output_directory: &Pat
             for arg in ios::additional_clang_args(arch, abi) {
                 builder = builder.clang_arg(arg);
             }
+        }
+        (arch, "unknown", "linux", Some("musl")) => {
+            let cpp = "10.3.1";
+            cc_build.include(format!("/usr/include/c++/{}", cpp));
+            cc_build.include(format!(
+                "/usr/include/c++/{}/{}-alpine-linux-musl",
+                cpp, arch
+            ));
+        }
+        ("wasm32", "unknown", "emscripten", _) => {
+            // visibility=default, otherwise some types may be missing:
+            // https://github.com/rust-lang/rust-bindgen/issues/751#issuecomment-555735577
+            builder = builder.clang_arg("-fvisibility=default");
+
+            let emsdk_base_dir = match std::env::var("EMSDK") {
+                Ok(val) => val,
+                Err(_e) => panic!("please set the EMSDK environment variable to the root of your Emscripten installation"),
+            };
+
+            // Add C++ includes (otherwise build will fail with <cmath> not found)
+            let add_sys_include = |builder: bindgen::Builder, path: &str| -> bindgen::Builder {
+                let cflag = format!(
+                    "-isystem{}/upstream/emscripten/system/{}",
+                    emsdk_base_dir, path
+                );
+                builder.clang_arg(&cflag)
+            };
+
+            builder = builder.clang_arg("-nobuiltininc");
+            builder = add_sys_include(builder, "lib/libc/musl/arch/emscripten");
+            builder = add_sys_include(builder, "lib/libc/musl/arch/generic");
+            builder = add_sys_include(builder, "lib/libcxx/include");
+            builder = add_sys_include(builder, "lib/libc/musl/include");
+            builder = add_sys_include(builder, "include");
         }
         _ => {}
     }
@@ -413,6 +453,11 @@ const OPAQUE_TYPES: &[&str] = &[
     "std::tuple_.*",
     // m93: private, exposed by Paint::asBlendMode(), fails layout tests.
     "skstd::optional",
+    // m100
+    "std::optional",
+    // Feature `svg`:
+    "SkSVGNode",
+    "skresources::ResourceProvider",
 ];
 
 const BLOCKLISTED_TYPES: &[&str] = &[
@@ -433,6 +478,10 @@ const BLOCKLISTED_TYPES: &[&str] = &[
     // Linux LLVM9 c++17 with SKIA_DEBUG=1
     "std::__cxx.*",
     "std::array.*",
+    // These two are not used with feature `svg` and conflict with the `Type` rewriter that would
+    // create invalid identifiers.
+    "SkSVGFontWeight",
+    "SkSVGFontWeight_Type",
 ];
 
 #[derive(Debug)]
@@ -542,7 +591,8 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("ContentChangeMode", rewrite::k_xxx_name),
     ("BackendHandleAccess", rewrite::k_xxx_name),
     // SkTextUtils_Align
-    ("Align", rewrite::k_xxx_name),
+    // We need name_opt to cover SkSVGPreserveAspectRatio_Align
+    ("Align", rewrite::k_xxx_name_opt),
     // SkTrimPathEffect_Mode
     ("Mode", rewrite::k_xxx),
     // SkTypeface_SerializeBehavior
@@ -624,7 +674,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
 ];
 
 pub(crate) mod rewrite {
-    use heck::ShoutySnakeCase;
+    use heck::ToShoutySnakeCase;
     use regex::Regex;
 
     pub fn k_xxx_uppercase(name: &str, variant: &str) -> String {
@@ -755,6 +805,9 @@ pub(crate) mod definitions {
                 "obj/modules/skshaper/skshaper.ninja".into(),
                 "obj/modules/skparagraph/skparagraph.ninja".into(),
             ]);
+        }
+        if features.svg {
+            files.push("obj/modules/svg/svg.ninja".into());
         }
         files
     }

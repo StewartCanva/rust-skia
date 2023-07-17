@@ -24,11 +24,17 @@ pub struct Features {
     /// Features related to text layout. Modules skshaper and skparagraph.
     pub text_layout: bool,
 
+    /// Support for rendering SVG.
+    pub svg: bool,
+
     /// Support the encoding of bitmap data to the WEBP image format.
     pub webp_encode: bool,
 
     /// Support the decoding of the WEBP image format to bitmap data.
     pub webp_decode: bool,
+
+    /// Build with FreeType embedded.
+    pub embed_freetype: bool,
 
     /// Build with animation support (yet unsupported, no wrappers).
     pub animation: bool,
@@ -52,8 +58,10 @@ impl Default for Features {
             metal: cfg!(feature = "metal"),
             d3d: cfg!(feature = "d3d"),
             text_layout: cfg!(feature = "textlayout"),
+            svg: cfg!(feature = "svg"),
             webp_encode: cfg!(feature = "webp-encode"),
             webp_decode: cfg!(feature = "webp-decode"),
+            embed_freetype: cfg!(feature = "embed-freetype"),
             animation: false,
             dng: false,
             particles: false,
@@ -94,11 +102,17 @@ impl Features {
         if self.text_layout {
             feature_ids.push(feature_id::TEXTLAYOUT);
         }
+        if self.svg {
+            feature_ids.push(feature_id::SVG);
+        }
         if self.webp_encode {
             feature_ids.push(feature_id::WEBPE);
         }
         if self.webp_decode {
             feature_ids.push(feature_id::WEBPD);
+        }
+        if self.embed_freetype {
+            feature_ids.push(feature_id::EMBED_FREETYPE);
         }
 
         feature_ids
@@ -112,9 +126,11 @@ mod feature_id {
     pub const METAL: &str = "metal";
     pub const D3D: &str = "d3d";
     pub const TEXTLAYOUT: &str = "textlayout";
+    pub const SVG: &str = "svg";
     pub const WEBPE: &str = "webpe";
     pub const WEBPD: &str = "webpd";
     pub const EGL: &str = "egl";
     pub const X11: &str = "x11";
     pub const WAYLAND: &str = "wayland";
+    pub const EMBED_FREETYPE: &str = "freetype";
 }

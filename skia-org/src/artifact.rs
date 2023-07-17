@@ -1,7 +1,5 @@
 use skia_safe::{Canvas, EncodedImageFormat, Surface};
-use std::fs;
-use std::io::Write;
-use std::path::Path;
+use std::{fs, io::Write, path::Path};
 
 pub fn draw_image_on_surface(
     surface: &mut Surface,
@@ -9,10 +7,10 @@ pub fn draw_image_on_surface(
     name: &str,
     func: impl Fn(&mut Canvas),
 ) {
-    let mut canvas = surface.canvas();
+    let canvas = surface.canvas();
 
     canvas.scale((2.0, 2.0));
-    func(&mut canvas);
+    func(canvas);
     let image = surface.image_snapshot();
     let data = image.encode_to_data(EncodedImageFormat::PNG).unwrap();
     write_file(data.as_bytes(), path, name, "png");

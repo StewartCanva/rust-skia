@@ -44,25 +44,28 @@ pub fn jobs(workflow: &Workflow) -> Vec<Job> {
 }
 
 pub fn qa_jobs() -> Vec<Job> {
+    const QA_ALL_FEATURES: &str = "gl,vulkan,textlayout,svg,webp";
     [
         Job {
             name: "stable-all-features",
             toolchain: "stable",
-            features: "gl,vulkan,textlayout,webp".into(),
+            features: QA_ALL_FEATURES.into(),
             example_args: Some("--driver cpu --driver pdf --driver svg".into()),
             ..Job::default()
         },
+        /*
         Job {
             name: "stable-all-features-debug",
             toolchain: "stable",
-            features: "gl,vulkan,textlayout,webp".into(),
+            features: QA_ALL_FEATURES.into(),
             skia_debug: true,
             ..Job::default()
         },
+        */
         Job {
             name: "beta-all-features",
             toolchain: "beta",
-            features: "gl,vulkan,textlayout,webp".into(),
+            features: QA_ALL_FEATURES.into(),
             ..Job::default()
         },
     ]
@@ -86,6 +89,7 @@ pub fn release_jobs(workflow: &Workflow) -> Vec<Job> {
         HostOS::Windows => {
             jobs.push(job("release-d3d", "d3d"));
             jobs.push(job("release-d3d-textlayout", "d3d,textlayout"));
+            jobs.push(job("release-d3d-gl-textlayout", "d3d,gl,textlayout"));
         }
         HostOS::Linux => {
             jobs.push(job("release-gl-x11", "gl,x11"));
@@ -125,6 +129,7 @@ fn linux_targets() -> Vec<Target> {
         ..Default::default()
     }];
     targets.extend(android_targets());
+    targets.extend(wasm_targets());
     targets
 }
 
@@ -142,6 +147,11 @@ fn macos_targets() -> Vec<Target> {
         },
         Target {
             target: "aarch64-apple-ios",
+            platform_features: "metal".into(),
+            ..Default::default()
+        },
+        Target {
+            target: "aarch64-apple-ios-sim",
             platform_features: "metal".into(),
             ..Default::default()
         },
@@ -171,5 +181,17 @@ fn android_targets() -> Vec<Target> {
             ..Default::default()
         },
     ]
+    .into()
+}
+
+fn wasm_targets() -> Vec<Target> {
+    [Target {
+        target: "wasm32-unknown-emscripten",
+        emscripten_env: true,
+        // `svg` does not build in skia-safe because of the `ureq` dependency (although it builds in
+        // skia-bindings just fine): <https://github.com/briansmith/ring/issues/1043>
+        disabled_features: "svg".into(),
+        ..Default::default()
+    }]
     .into()
 }
