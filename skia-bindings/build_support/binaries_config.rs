@@ -10,6 +10,8 @@ pub mod lib {
     pub const SKIA_BINDINGS: &str = "skia-bindings";
     pub const SK_SHAPER: &str = "skshaper";
     pub const SK_PARAGRAPH: &str = "skparagraph";
+    pub const SVG: &str = "svg";
+    pub const SK_RESOURCES: &str = "skresources";
     pub const SK_UNICODE: &str = "skunicode";
 }
 
@@ -62,6 +64,10 @@ impl BinariesConfiguration {
             // Since M94, icu sources are embedded in skunicode
             ninja_built_libraries.push(lib::SK_UNICODE.into());
         }
+        if features.svg {
+            ninja_built_libraries.push(lib::SVG.into());
+            ninja_built_libraries.push(lib::SK_RESOURCES.into());
+        }
 
         let mut link_libraries = Vec::new();
 
@@ -109,6 +115,11 @@ impl BinariesConfiguration {
             }
             (_, "apple", "ios", abi) => {
                 link_libraries.extend(ios::link_libraries(abi, features));
+            }
+            ("wasm32", "unknown", "emscripten", _) => {
+                if features.gl {
+                    link_libraries.extend(["GL"]);
+                }
             }
             _ => panic!("unsupported target: {:?}", cargo::target()),
         };
@@ -202,7 +213,7 @@ impl BinariesConfiguration {
                     "COPY OPERATION FAILED: from '{}' to '{}': {}",
                     from_path.display(),
                     to_path.display(),
-                    e.to_string()
+                    e
                 );
                 e
             })

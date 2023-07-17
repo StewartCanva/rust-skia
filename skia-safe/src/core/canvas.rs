@@ -35,7 +35,7 @@ bitflags! {
 }
 
 /// [`SaveLayerRec`] contains the state used to create the layer.
-#[allow(dead_code)]
+#[repr(C)]
 pub struct SaveLayerRec<'a> {
     // We _must_ store _references_ to the native types here, because not all of them are native
     // transmutable, like ImageFilter or Image, which are represented as ref counted pointers and so
@@ -44,6 +44,7 @@ pub struct SaveLayerRec<'a> {
     paint: Option<&'a SkPaint>,
     backdrop: Option<&'a SkImageFilter>,
     flags: SaveLayerFlags,
+    experimental_backdrop_scale: scalar,
 }
 
 native_transmutable!(
@@ -62,6 +63,10 @@ impl fmt::Debug for SaveLayerRec<'_> {
                 &ImageFilter::from_unshared_ptr_ref(&(self.backdrop.as_ptr_or_null() as *mut _)),
             )
             .field("flags", &self.flags)
+            .field(
+                "experimental_backdrop_scale",
+                &self.experimental_backdrop_scale,
+            )
             .finish()
     }
 }
@@ -77,12 +82,14 @@ impl<'a> Default for SaveLayerRec<'a> {
             paint: None,
             backdrop: None,
             flags: SaveLayerFlags::empty(),
+            experimental_backdrop_scale: 1.0,
         }
     }
 }
 
 impl<'a> SaveLayerRec<'a> {
     /// Hints at layer size limit
+    #[must_use]
     pub fn bounds(self, bounds: &'a Rect) -> Self {
         Self {
             bounds: Some(bounds.native()),
@@ -91,6 +98,7 @@ impl<'a> SaveLayerRec<'a> {
     }
 
     /// Modifies overlay
+    #[must_use]
     pub fn paint(self, paint: &'a Paint) -> Self {
         Self {
             paint: Some(paint.native()),
@@ -102,6 +110,7 @@ impl<'a> SaveLayerRec<'a> {
     /// [`SaveLayerFlags::INIT_WITH_PREVIOUS`] on [`Self::flags`]: the current layer is copied into
     /// the new layer, rather than initializing the new layer with transparent-black. This is then
     /// filtered by [`Self::backdrop`] (respecting the current clip).
+    #[must_use]
     pub fn backdrop(self, backdrop: &'a ImageFilter) -> Self {
         Self {
             backdrop: Some(backdrop.native()),
@@ -113,6 +122,7 @@ impl<'a> SaveLayerRec<'a> {
         since = "0.33.0",
         note = "removed without replacement, does not set clip_mask"
     )]
+    #[must_use]
     pub fn clip_mask(self, _clip_mask: &'a Image) -> Self {
         self
     }
@@ -121,11 +131,13 @@ impl<'a> SaveLayerRec<'a> {
         since = "0.33.0",
         note = "removed without replacement, does not set clip_matrix"
     )]
+    #[must_use]
     pub fn clip_matrix(self, _clip_matrix: &'a Matrix) -> Self {
         self
     }
 
     /// Preserves LCD text, creates with prior layer contents
+    #[must_use]
     pub fn flags(self, flags: SaveLayerFlags) -> Self {
         Self { flags, ..self }
     }
@@ -138,6 +150,8 @@ variant_name!(PointMode::Polygon, point_mode_naming);
 /// [`SrcRectConstraint`] controls the behavior at the edge of source [`Rect`], provided to
 /// [`Canvas::draw_image_rect()`] when there is any filtering. If kStrict is set, then extra code is
 /// used to ensure it nevers samples outside of the src-rect.
+///
+/// [`SrcRectConstraint::Strict`] disables the use of mipmaps and anisotropic filtering.
 pub use sb::SkCanvas_SrcRectConstraint as SrcRectConstraint;
 variant_name!(SrcRectConstraint::Fast, src_rect_constraint_naming);
 
@@ -409,14 +423,21 @@ impl Canvas {
     /// Returns [`Canvas`] that can be used to draw into bitmap
     ///
     /// example: <https://fiddle.skia.org/c/@Canvas_const_SkBitmap_const_SkSurfaceProps>
-    pub fn from_bitmap<'lt>(bitmap: &Bitmap, props: Option<&SurfaceProps>) -> OwnedCanvas<'lt> {
+    pub fn from_bitmap<'lt>(
+        bitmap: &Bitmap,
+        props: Option<&SurfaceProps>,
+    ) -> Option<OwnedCanvas<'lt>> {
+        // <https://github.com/rust-skia/rust-skia/issues/669>
+        if !bitmap.is_ready_to_draw() {
+            return None;
+        }
         let props_ptr = props.native_ptr_or_null();
         let ptr = if props_ptr.is_null() {
             unsafe { sb::C_SkCanvas_newFromBitmap(bitmap.native()) }
         } else {
             unsafe { sb::C_SkCanvas_newFromBitmapAndProps(bitmap.native(), props_ptr) }
         };
-        Canvas::own_from_native_ptr(ptr).unwrap()
+        Canvas::own_from_native_ptr(ptr)
     }
 
     /// Returns [`ImageInfo`] for [`Canvas`]. If [`Canvas`] is not associated with raster surface or
@@ -441,6 +462,19 @@ impl Canvas {
     pub fn props(&self) -> Option<SurfaceProps> {
         let mut sp = SurfaceProps::default();
         unsafe { self.native().getProps(sp.native_mut()) }.if_true_some(sp)
+    }
+
+    /// Returns the [`SurfaceProps`] associated with the canvas (i.e., at the base of the layer
+    /// stack).
+    pub fn base_props(&self) -> SurfaceProps {
+        SurfaceProps::from_native_c(unsafe { self.native().getBaseProps() })
+    }
+
+    /// Returns the [`SurfaceProps`] associated with the canvas that are currently active (i.e., at
+    /// the top of the layer stack). This can differ from [`Self::base_props`] depending on the flags
+    /// passed to saveLayer (see [`SaveLayerFlags`]).
+    pub fn top_props(&self) -> SurfaceProps {
+        SurfaceProps::from_native_c(unsafe { self.native().getTopProps() })
     }
 
     /// Triggers the immediate execution of all pending draw operations.
@@ -1020,9 +1054,6 @@ impl Canvas {
         unsafe { self.native_mut().concat(matrix.native()) }
         self
     }
-
-    // TODO: markCTM
-    // TODO: findMarkedCTM
 
     pub fn concat_44(&mut self, m: &M44) -> &mut Self {
         unsafe { self.native_mut().concat1(m.native()) }
@@ -1906,6 +1937,8 @@ impl Canvas {
         paint: &Paint,
     ) -> &mut Self {
         let origin = origin.into();
+        #[cfg(all(feature = "textlayout", feature = "embed-icudtl"))]
+        crate::icu::init();
         unsafe {
             self.native_mut().drawTextBlob(
                 blob.as_ref().native(),
@@ -1948,37 +1981,36 @@ impl Canvas {
     /// If `paint` contains an [`Shader`] and vertices does not contain tex coords, the shader is
     /// mapped using the vertices' positions.
     ///
-    /// If vertices colors are defined in vertices, and [`Paint`] `paint` contains [`Shader`],
-    /// [`BlendMode`] mode combines vertices colors with [`Shader`].
+    /// [`BlendMode`] is ignored if [`Vertices`] does not have colors. Otherwise, it combines
+    ///   - the [`Shader`] if [`Paint`] contains [`Shader`
+    ///   - or the opaque [`Paint`] color if [`Paint`] does not contain [`Shader`]
+    /// as the src of the blend and the interpolated vertex colors as the dst.
     ///
+    /// [`crate::MaskFilter`], [`crate::PathEffect`], and antialiasing on [`Paint`] are ignored.
+    //
     /// - `vertices` triangle mesh to draw
-    /// - `mode` combines vertices colors with [`Shader`], if both are present
-    /// - `paint` specifies the [`Shader`], used as [`Vertices`] texture, may be `None`
+    /// - `mode` combines vertices' colors with [`Shader`] if present or [`Paint`] opaque color if
+    ///   not. Ignored if the vertices do not contain color.
+    /// - `paint` specifies the [`Shader`], used as [`Vertices`] texture, and
+    ///   [`crate::ColorFilter`].
     ///
+    /// example: <https://fiddle.skia.org/c/@Canvas_drawVertices>
     /// example: <https://fiddle.skia.org/c/@Canvas_drawVertices_2>
     pub fn draw_vertices(
         &mut self,
         vertices: &Vertices,
-        mode: impl Into<Option<BlendMode>>,
-        paint: Option<&Paint>,
+        mode: BlendMode,
+        paint: &Paint,
     ) -> &mut Self {
         unsafe {
-            self.native_mut().drawVertices(
-                vertices.native(),
-                mode.into().unwrap_or(BlendMode::Modulate),
-                paint.native_ptr_or_null(),
-            )
+            self.native_mut()
+                .drawVertices(vertices.native(), mode, paint.native())
         }
         self
     }
 
     /// Draws a Coons patch: the interpolation of four cubics with shared corners,
     /// associating a color, and optionally a texture [`Point`], with each corner.
-    ///
-    /// Coons patch uses clip and [`Matrix`], `paint` [`Shader`], [`crate::ColorFilter`],
-    /// alpha, [`ImageFilter`], and [`BlendMode`]. If [`Shader`] is provided it is treated
-    /// as Coons patch texture; [`BlendMode`] mode combines color colors and [`Shader`] if
-    /// both are provided.
     ///
     /// [`Point`] array cubics specifies four [`Path`] cubic starting at the top-left corner,
     /// in clockwise order, sharing every fourth point. The last [`Path`] cubic ends at the
@@ -1991,28 +2023,40 @@ impl Canvas {
     /// corners in top-left, top-right, bottom-right, bottom-left order. If `tex_coords` is
     /// `None`, [`Shader`] is mapped using positions (derived from cubics).
     ///
+    /// [`BlendMode`] is ignored if colors is `None`. Otherwise, it combines
+    ///   - the [`Shader`] if [`Paint`] contains [`Shader`]
+    ///   - or the opaque [`Paint`] color if [`Paint`] does not contain [`Shader`]
+    /// as the src of the blend and the interpolated patch colors as the dst.
+    ///
+    /// [`crate::MaskFilter`], [`crate::PathEffect`], and antialiasing on [`Paint`] are ignored.
+    ///
     /// - `cubics` [`Path`] cubic array, sharing common points
     /// - `colors` color array, one for each corner
     /// - `tex_coords` [`Point`] array of texture coordinates, mapping [`Shader`] to corners;
     ///   may be `None`
-    /// - `mode` [`BlendMode`] for colors, and for [`Shader`] if `paint` has one
+    /// - `mode` combines patch's colors with [`Shader`] if present or [`Paint`] opaque color if
+    ///    not. Ignored if colors is `None`.
     /// - `paint` [`Shader`], [`crate::ColorFilter`], [`BlendMode`], used to draw
-    pub fn draw_patch(
+    pub fn draw_patch<'a>(
         &mut self,
         cubics: &[Point; 12],
-        colors: &[Color; 4],
+        colors: impl Into<Option<&'a [Color; 4]>>,
         tex_coords: Option<&[Point; 4]>,
-        mode: impl Into<Option<BlendMode>>,
+        mode: BlendMode,
         paint: &Paint,
     ) -> &mut Self {
+        let colors = colors
+            .into()
+            .map(|c| c.native().as_ptr())
+            .unwrap_or(ptr::null());
         unsafe {
             self.native_mut().drawPatch(
                 cubics.native().as_ptr(),
-                colors.native().as_ptr(),
+                colors,
                 tex_coords
                     .map(|tc| tc.native().as_ptr())
                     .unwrap_or(ptr::null()),
-                mode.into().unwrap_or(BlendMode::Modulate),
+                mode,
                 paint.native(),
             )
         }
