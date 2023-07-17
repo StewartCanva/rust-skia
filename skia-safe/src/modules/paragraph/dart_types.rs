@@ -37,6 +37,7 @@ pub trait RangeExtensions {
     fn shift(&mut self, d: usize);
     fn contains(&self, other: &Self) -> bool;
     fn intersects(&self, other: &Self) -> bool;
+    #[must_use]
     fn intersection(&self, other: &Self) -> Self;
     fn empty(&self) -> bool;
 }
@@ -87,6 +88,3 @@ variant_name!(
 );
 
 // m84: LineMetricStyle is declared but not used in the public API yet.
-
-pub use sb::skia_textlayout_DrawOptions as DrawOptions;
-variant_name!(DrawOptions::Replay, draw_options_naming);
