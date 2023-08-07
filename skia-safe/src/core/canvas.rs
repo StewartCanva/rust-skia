@@ -1,14 +1,14 @@
 #[cfg(feature = "gpu")]
 use crate::gpu;
 use crate::{
-    prelude::*, scalar, u8cpu, Bitmap, BlendMode, ClipOp, Color, Color4f, Data, Drawable,
-    FilterMode, Font, GlyphId, IPoint, IRect, ISize, Image, ImageFilter, ImageInfo, Matrix, Paint,
-    Path, Picture, Pixmap, Point, QuickReject, RRect, RSXform, Rect, Region, SamplingOptions,
-    Shader, Surface, SurfaceProps, TextBlob, TextEncoding, Vector, Vertices, M44,
+    prelude::*, scalar, Bitmap, BlendMode, ClipOp, Color, Color4f, Data, Drawable, FilterMode,
+    Font, GlyphId, IPoint, IRect, ISize, Image, ImageFilter, ImageInfo, Matrix, Paint, Path,
+    Picture, Pixmap, Point, QuickReject, RRect, RSXform, Rect, Region, SamplingOptions, Shader,
+    Surface, SurfaceProps, TextBlob, TextEncoding, Vector, Vertices, M44,
 };
 use skia_bindings::{
     self as sb, SkAutoCanvasRestore, SkCanvas, SkCanvas_SaveLayerRec, SkImageFilter, SkPaint,
-    SkRect,
+    SkRect, U8CPU,
 };
 use std::{
     convert::TryInto,
@@ -26,6 +26,7 @@ bitflags! {
     /// [`SaveLayerFlags`] provides options that may be used in any combination in [`SaveLayerRec`],
     /// defining how layer allocated by [`Canvas::save_layer()`] operates. It may be set to zero,
     /// [`PRESERVE_LCD_TEXT`], [`INIT_WITH_PREVIOUS`], or both flags.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SaveLayerFlags: u32 {
         const PRESERVE_LCD_TEXT = sb::SkCanvas_SaveLayerFlagsSet_kPreserveLCDText_SaveLayerFlag as _;
         /// initializes with previous contents
@@ -145,7 +146,7 @@ impl<'a> SaveLayerRec<'a> {
 
 /// Selects if an array of points are drawn as discrete points, as lines, or as an open polygon.
 pub use sb::SkCanvas_PointMode as PointMode;
-variant_name!(PointMode::Polygon, point_mode_naming);
+variant_name!(PointMode::Polygon);
 
 /// [`SrcRectConstraint`] controls the behavior at the edge of source [`Rect`], provided to
 /// [`Canvas::draw_image_rect()`] when there is any filtering. If kStrict is set, then extra code is
@@ -153,7 +154,7 @@ variant_name!(PointMode::Polygon, point_mode_naming);
 ///
 /// [`SrcRectConstraint::Strict`] disables the use of mipmaps and anisotropic filtering.
 pub use sb::SkCanvas_SrcRectConstraint as SrcRectConstraint;
-variant_name!(SrcRectConstraint::Fast, src_rect_constraint_naming);
+variant_name!(SrcRectConstraint::Fast);
 
 /// Provides access to Canvas's pixels.
 ///
@@ -212,7 +213,9 @@ impl<'a> From<&'a [RSXform]> for GlyphPositions<'a> {
 #[repr(transparent)]
 pub struct Canvas(SkCanvas);
 
-impl NativeAccess<SkCanvas> for Canvas {
+impl NativeAccess for Canvas {
+    type Native = SkCanvas;
+
     fn native(&self) -> &SkCanvas {
         &self.0
     }
@@ -423,14 +426,21 @@ impl Canvas {
     /// Returns [`Canvas`] that can be used to draw into bitmap
     ///
     /// example: <https://fiddle.skia.org/c/@Canvas_const_SkBitmap_const_SkSurfaceProps>
-    pub fn from_bitmap<'lt>(bitmap: &Bitmap, props: Option<&SurfaceProps>) -> OwnedCanvas<'lt> {
+    pub fn from_bitmap<'lt>(
+        bitmap: &Bitmap,
+        props: Option<&SurfaceProps>,
+    ) -> Option<OwnedCanvas<'lt>> {
+        // <https://github.com/rust-skia/rust-skia/issues/669>
+        if !bitmap.is_ready_to_draw() {
+            return None;
+        }
         let props_ptr = props.native_ptr_or_null();
         let ptr = if props_ptr.is_null() {
             unsafe { sb::C_SkCanvas_newFromBitmap(bitmap.native()) }
         } else {
             unsafe { sb::C_SkCanvas_newFromBitmapAndProps(bitmap.native(), props_ptr) }
         };
-        Canvas::own_from_native_ptr(ptr).unwrap()
+        Canvas::own_from_native_ptr(ptr)
     }
 
     /// Returns [`ImageInfo`] for [`Canvas`]. If [`Canvas`] is not associated with raster surface or
@@ -455,6 +465,19 @@ impl Canvas {
     pub fn props(&self) -> Option<SurfaceProps> {
         let mut sp = SurfaceProps::default();
         unsafe { self.native().getProps(sp.native_mut()) }.if_true_some(sp)
+    }
+
+    /// Returns the [`SurfaceProps`] associated with the canvas (i.e., at the base of the layer
+    /// stack).
+    pub fn base_props(&self) -> SurfaceProps {
+        SurfaceProps::from_native_c(unsafe { self.native().getBaseProps() })
+    }
+
+    /// Returns the [`SurfaceProps`] associated with the canvas that are currently active (i.e., at
+    /// the top of the layer stack). This can differ from [`Self::base_props`] depending on the flags
+    /// passed to saveLayer (see [`SaveLayerFlags`]).
+    pub fn top_props(&self) -> SurfaceProps {
+        SurfaceProps::from_native_c(unsafe { self.native().getTopProps() })
     }
 
     /// Triggers the immediate execution of all pending draw operations.
@@ -517,6 +540,14 @@ impl Canvas {
         gpu::RecordingContext::from_unshared_ptr(unsafe {
             sb::C_SkCanvas_recordingContext(self.native_mut())
         })
+    }
+
+    /// Returns the [`gpu::DirectContext`].
+    /// This is a rust-skia helper for that makes it simpler to call [`Image::encode`].
+    #[cfg(feature = "gpu")]
+    pub fn direct_context(&mut self) -> Option<gpu::DirectContext> {
+        self.recording_context()
+            .and_then(|mut c| c.as_direct_context())
     }
 
     /// Sometimes a canvas is owned by a surface. If it is, [`Self::surface()`] will return a bare
@@ -584,10 +615,9 @@ impl Canvas {
     /// Returns [`Pixmap`] if [`Canvas`] has direct access to pixels
     ///
     /// example: <https://fiddle.skia.org/c/@Canvas_peekPixels>
-    pub fn peek_pixels(&mut self) -> Option<Borrows<Pixmap>> {
+    pub fn peek_pixels(&mut self) -> Option<Pixmap> {
         let mut pixmap = Pixmap::default();
-        unsafe { self.native_mut().peekPixels(pixmap.native_mut()) }
-            .if_true_then_some(move || pixmap.borrows(self))
+        unsafe { self.native_mut().peekPixels(pixmap.native_mut()) }.if_true_some(pixmap)
     }
 
     /// Copies [`Rect`] of pixels from [`Canvas`] into `dst_pixels`. [`Matrix`] and clip are
@@ -853,7 +883,7 @@ impl Canvas {
 
     // The save_layer(bounds, paint) variants have been replaced by SaveLayerRec.
 
-    /// Saves [`Matrix`] and clip, and allocates [`Bitmap`] for subsequent drawing.
+    /// Saves [`Matrix`] and clip, and allocates [`Surface`] for subsequent drawing.
     ///
     /// Calling [`Self::restore()`] discards changes to [`Matrix`] and clip, and blends layer with
     /// alpha opacity onto prior layer.
@@ -866,7 +896,7 @@ impl Canvas {
     /// [`Rect`] bounds suggests but does not define layer size. To clip drawing to a specific
     /// rectangle, use [`Self::clip_rect()`].
     ///
-    /// alpha of zero is fully transparent, 255 is fully opaque.
+    /// alpha of zero is fully transparent, 1.0 is fully opaque.
     ///
     /// Call [`Self::restore_to_count()`] with result to restore this and subsequent saves.
     ///
@@ -875,19 +905,24 @@ impl Canvas {
     /// Returns depth of saved stack
     ///
     /// example: <https://fiddle.skia.org/c/@Canvas_saveLayerAlpha>
-    pub fn save_layer_alpha(&mut self, bounds: impl Into<Option<Rect>>, alpha: u8cpu) -> usize {
+    pub fn save_layer_alpha_f(&mut self, bounds: impl Into<Option<Rect>>, alpha: f32) -> usize {
         unsafe {
             self.native_mut()
-                .saveLayerAlpha(bounds.into().native().as_ptr_or_null(), alpha)
+                .saveLayerAlphaf(bounds.into().native().as_ptr_or_null(), alpha)
         }
         .try_into()
         .unwrap()
     }
 
-    /// Saves [`Matrix`] and clip, and allocates [`Bitmap`] for subsequent drawing.
+    /// Helper that accepts an int between 0 and 255, and divides it by 255.0
+    pub fn save_layer_alpha(&mut self, bounds: impl Into<Option<Rect>>, alpha: U8CPU) -> usize {
+        self.save_layer_alpha_f(bounds, alpha as f32 * (1.0 / 255.0))
+    }
+
+    /// Saves [`Matrix`] and clip, and allocates [`Surface`] for subsequent drawing.
     ///
     /// Calling [`Self::restore()`] discards changes to [`Matrix`] and clip,
-    /// and blends [`Bitmap`] with alpha opacity onto the prior layer.
+    /// and blends [`Surface`] with alpha opacity onto the prior layer.
     ///
     /// [`Matrix`] may be changed by [`Self::translate()`], [`Self::scale()`], [`Self::rotate()`],
     /// [`Self::skew()`], [`Self::concat()`], [`Self::set_matrix()`], and [`Self::reset_matrix()`].
@@ -2297,7 +2332,7 @@ pub mod lattice {
     /// Optional setting per rectangular grid entry to make it transparent,
     /// or to fill the grid entry with a color.
     pub use sb::SkCanvas_Lattice_RectType as RectType;
-    variant_name!(RectType::FixedColor, rect_type_naming);
+    variant_name!(RectType::FixedColor);
 }
 
 #[derive(Debug)]
@@ -2322,7 +2357,9 @@ impl<'a> DerefMut for AutoRestoredCanvas<'a> {
     }
 }
 
-impl<'a> NativeAccess<SkAutoCanvasRestore> for AutoRestoredCanvas<'a> {
+impl<'a> NativeAccess for AutoRestoredCanvas<'a> {
+    type Native = SkAutoCanvasRestore;
+
     fn native(&self) -> &SkAutoCanvasRestore {
         &self.restore
     }
@@ -2368,8 +2405,8 @@ impl AutoCanvasRestore {
 #[cfg(test)]
 mod tests {
     use crate::{
-        canvas::SaveLayerFlags, canvas::SaveLayerRec, AlphaType, Canvas, ClipOp, Color, ColorType,
-        ImageInfo, OwnedCanvas, Rect,
+        canvas::SaveLayerFlags, canvas::SaveLayerRec, surfaces, AlphaType, Canvas, ClipOp, Color,
+        ColorType, ImageInfo, OwnedCanvas, Rect,
     };
 
     #[test]
@@ -2444,7 +2481,8 @@ mod tests {
     /// Regression test for: <https://github.com/rust-skia/rust-skia/issues/427>
     #[test]
     fn test_local_and_device_clip_bounds() {
-        let mut surface = crate::Surface::new_raster_n32_premul((100, 100)).unwrap();
+        let mut surface =
+            surfaces::raster(&ImageInfo::new_n32_premul((100, 100), None), 0, None).unwrap();
         let _ = surface.canvas().device_clip_bounds();
         let _ = surface.canvas().local_clip_bounds();
         let _ = surface.canvas().local_to_device();

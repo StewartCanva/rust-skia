@@ -7,12 +7,13 @@ use std::{
 };
 
 pub use skia_bindings::SkApplyPerspectiveClip as ApplyPerspectiveClip;
-variant_name!(ApplyPerspectiveClip::Yes, perspective_clip_naming);
+variant_name!(ApplyPerspectiveClip::Yes);
 
 bitflags! {
     // m85: On Windows the SkMatrix_TypeMask is defined as i32,
     // but we stick to u32 (macOS / Linux), because there is no need to leak
     // the platform difference to the Rust side.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TypeMask: u32 {
         const IDENTITY = sb::SkMatrix_TypeMask_kIdentity_Mask as _;
         const TRANSLATE = sb::SkMatrix_TypeMask_kTranslate_Mask as _;
@@ -27,7 +28,7 @@ impl TypeMask {
 }
 
 pub use skia_bindings::SkMatrix_ScaleToFit as ScaleToFit;
-variant_name!(ScaleToFit::Fill, scale_to_fit_naming);
+variant_name!(ScaleToFit::Fill);
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -767,6 +768,7 @@ impl Matrix {
     pub fn min_max_scales(&self) -> (scalar, scalar) {
         let mut r: [scalar; 2] = Default::default();
         unsafe { self.native().getMinMaxScales(r.as_mut_ptr()) };
+        #[allow(clippy::tuple_array_conversions)]
         (r[0], r[1])
     }
 

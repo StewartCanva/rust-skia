@@ -12,9 +12,13 @@ use std::{
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
 pub struct IRect {
+    /// The x coordinate of the rectangle's left edge.
     pub left: i32,
+    /// The y coordinate of the rectangle's top edge.
     pub top: i32,
+    /// The x coordinate of the rectangle's right edge.
     pub right: i32,
+    /// The y coordinate of the rectangle's bottom edge.
     pub bottom: i32,
 }
 
@@ -328,9 +332,13 @@ impl Contains<Rect> for IRect {
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Default, Debug)]
 pub struct Rect {
+    /// The x coordinate of the rectangle's left edge.
     pub left: scalar,
+    /// The y coordinate of the rectangle's top edge.
     pub top: scalar,
+    /// The x coordinate of the rectangle's right edge.
     pub right: scalar,
+    /// The y coordinate of the rectangle's bottom edge.
     pub bottom: scalar,
 }
 
@@ -720,12 +728,24 @@ impl Rect {
 
 impl Contains<Point> for Rect {
     fn contains(&self, p: Point) -> bool {
+        self.contains(&p)
+    }
+}
+
+impl Contains<&Point> for Rect {
+    fn contains(&self, p: &Point) -> bool {
         p.x >= self.left && p.x < self.right && p.y >= self.top && p.y < self.bottom
     }
 }
 
 impl Contains<Rect> for Rect {
     fn contains(&self, r: Rect) -> bool {
+        self.contains(&r)
+    }
+}
+
+impl Contains<&Rect> for Rect {
+    fn contains(&self, r: &Rect) -> bool {
         // TODO: can we eliminate the this->is_empty check?
         !r.is_empty()
             && !self.is_empty()
@@ -738,6 +758,12 @@ impl Contains<Rect> for Rect {
 
 impl Contains<IRect> for Rect {
     fn contains(&self, r: IRect) -> bool {
+        self.contains(&r)
+    }
+}
+
+impl Contains<&IRect> for Rect {
+    fn contains(&self, r: &IRect) -> bool {
         // TODO: can we eliminate the this->isEmpty check?
         !r.is_empty()
             && !self.is_empty()
