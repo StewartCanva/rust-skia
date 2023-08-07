@@ -5,10 +5,10 @@ use super::gl;
 #[cfg(feature = "vulkan")]
 use super::vk;
 use super::{
-    BackendFormat, BackendRenderTarget, BackendSurfaceMutableState, BackendTexture, ContextOptions,
-    FlushInfo, RecordingContext, SemaphoresSubmitted,
+    BackendFormat, BackendRenderTarget, BackendTexture, ContextOptions, FlushInfo,
+    MutableTextureState, RecordingContext, SemaphoresSubmitted,
 };
-use crate::{image, prelude::*, Data};
+use crate::{prelude::*, Data, Image, TextureCompressionType};
 use skia_bindings::{self as sb, GrDirectContext, GrDirectContext_DirectContextID, SkRefCntBase};
 use std::{
     fmt,
@@ -279,6 +279,30 @@ impl DirectContext {
         }
     }
 
+    pub fn flush_image_with_info(
+        &mut self,
+        image: &Image,
+        info: &FlushInfo,
+    ) -> SemaphoresSubmitted {
+        unsafe {
+            sb::C_GrDirectContext_flushImageWithInfo(
+                self.native_mut(),
+                image.clone().into_ptr(),
+                info.native(),
+            )
+        }
+    }
+
+    pub fn flush_image(&mut self, image: &Image) {
+        unsafe { sb::C_GrDirectContext_flushImage(self.native_mut(), image.clone().into_ptr()) }
+    }
+
+    pub fn flush_and_submit_image(&mut self, image: &Image) {
+        unsafe {
+            sb::C_GrDirectContext_flushAndSubmitImage(self.native_mut(), image.clone().into_ptr())
+        }
+    }
+
     pub fn submit(&mut self, sync_cpu: impl Into<Option<bool>>) -> bool {
         unsafe { self.native_mut().submit(sync_cpu.into().unwrap_or(false)) }
     }
@@ -304,11 +328,12 @@ impl DirectContext {
     // TODO: wrap createBackendTexture (several variants)
     //       introduced in m76, m77, and m79
     //       extended in m84 with finishedProc and finishedContext
+    //       extended in m107 with label
 
     // TODO: wrap updateBackendTexture (several variants)
     //       introduced in m84
 
-    pub fn compressed_backend_format(&self, compression: image::CompressionType) -> BackendFormat {
+    pub fn compressed_backend_format(&self, compression: TextureCompressionType) -> BackendFormat {
         let mut backend_format = BackendFormat::new_invalid();
         unsafe {
             sb::C_GrDirectContext_compressedBackendFormat(
@@ -331,7 +356,7 @@ impl DirectContext {
     pub fn set_backend_texture_state(
         &mut self,
         backend_texture: &BackendTexture,
-        state: &BackendSurfaceMutableState,
+        state: &MutableTextureState,
     ) -> bool {
         self.set_backend_texture_state_and_return_previous(backend_texture, state)
             .is_some()
@@ -340,9 +365,9 @@ impl DirectContext {
     pub fn set_backend_texture_state_and_return_previous(
         &mut self,
         backend_texture: &BackendTexture,
-        state: &BackendSurfaceMutableState,
-    ) -> Option<BackendSurfaceMutableState> {
-        let mut previous = BackendSurfaceMutableState::default();
+        state: &MutableTextureState,
+    ) -> Option<MutableTextureState> {
+        let mut previous = MutableTextureState::default();
         unsafe {
             self.native_mut().setBackendTextureState(
                 backend_texture.native(),
@@ -359,7 +384,7 @@ impl DirectContext {
     pub fn set_backend_render_target_state(
         &mut self,
         target: &BackendRenderTarget,
-        state: &BackendSurfaceMutableState,
+        state: &MutableTextureState,
     ) -> bool {
         self.set_backend_render_target_state_and_return_previous(target, state)
             .is_some()
@@ -368,9 +393,9 @@ impl DirectContext {
     pub fn set_backend_render_target_state_and_return_previous(
         &mut self,
         target: &BackendRenderTarget,
-        state: &BackendSurfaceMutableState,
-    ) -> Option<BackendSurfaceMutableState> {
-        let mut previous = BackendSurfaceMutableState::default();
+        state: &MutableTextureState,
+    ) -> Option<MutableTextureState> {
+        let mut previous = MutableTextureState::default();
         unsafe {
             self.native_mut().setBackendRenderTargetState(
                 target.native(),

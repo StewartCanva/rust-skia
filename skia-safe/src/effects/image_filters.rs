@@ -1,7 +1,7 @@
 use crate::{
     prelude::*, scalar, Blender, Color, ColorChannel, ColorFilter, CubicResampler, IPoint, IRect,
-    ISize, Image, ImageFilter, Matrix, Paint, Picture, Point3, Rect, Region, SamplingOptions,
-    Shader, TileMode, Vector,
+    ISize, Image, ImageFilter, Matrix, Picture, Point3, Rect, Region, SamplingOptions, Shader,
+    TileMode, Vector,
 };
 use skia_bindings::{self as sb, SkImageFilter, SkImageFilters_CropRect};
 
@@ -276,6 +276,26 @@ pub fn magnifier(
     })
 }
 
+pub fn magnifier2(
+    lens_bounds: impl AsRef<Rect>,
+    zoom_amount: scalar,
+    inset: scalar,
+    sampling_options: SamplingOptions,
+    input: impl Into<Option<ImageFilter>>,
+    crop_rect: impl Into<CropRect>,
+) -> Option<ImageFilter> {
+    ImageFilter::from_ptr(unsafe {
+        sb::C_SkImageFilters_Magnifier2(
+            lens_bounds.as_ref().native(),
+            zoom_amount,
+            inset,
+            sampling_options.native(),
+            input.into().into_ptr_or_null(),
+            crop_rect.into().native(),
+        )
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn matrix_convolution(
     kernel_size: impl Into<ISize>,
@@ -353,12 +373,6 @@ pub fn offset(
     })
 }
 
-pub fn paint(paint: &Paint, crop_rect: impl Into<CropRect>) -> Option<ImageFilter> {
-    ImageFilter::from_ptr(unsafe {
-        sb::C_SkImageFilters_Paint(paint.native(), crop_rect.into().native())
-    })
-}
-
 pub fn picture<'a>(
     picture: impl Into<Picture>,
     target_rect: impl Into<Option<&'a Rect>>,
@@ -373,7 +387,7 @@ pub fn picture<'a>(
 }
 
 pub use skia_bindings::SkImageFilters_Dither as Dither;
-variant_name!(Dither::Yes, dither_naming);
+variant_name!(Dither::Yes);
 
 pub fn shader(shader: impl Into<Shader>, crop_rect: impl Into<CropRect>) -> Option<ImageFilter> {
     shader_with_dither(shader, Dither::No, crop_rect)
@@ -774,6 +788,7 @@ impl ImageFilter {
         )
     }
 
+    #[deprecated(since = "0.64.0", note = "use magnifier2() instead")]
     pub fn magnifier<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -781,6 +796,24 @@ impl ImageFilter {
         inset: scalar,
     ) -> Option<Self> {
         magnifier(src_rect, inset, self, crop_rect.into().map(|r| r.into()))
+    }
+
+    pub fn magnifier2<'a>(
+        self,
+        lens_bounds: impl AsRef<Rect>,
+        zoom_amount: scalar,
+        inset: scalar,
+        sampling_options: SamplingOptions,
+        crop_rect: impl Into<Option<&'a IRect>>,
+    ) -> Option<Self> {
+        magnifier2(
+            lens_bounds,
+            zoom_amount,
+            inset,
+            sampling_options,
+            self,
+            crop_rect.into().map(|r| r.into()),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -839,10 +872,6 @@ impl ImageFilter {
         offset(delta, self, crop_rect.into().map(|r| r.into()))
     }
 
-    pub fn from_paint<'a>(paint: &Paint, crop_rect: impl Into<Option<&'a IRect>>) -> Option<Self> {
-        self::paint(paint, crop_rect.into().map(|r| r.into()))
-    }
-
     pub fn from_picture<'a>(
         picture: impl Into<Picture>,
         crop_rect: impl Into<Option<&'a Rect>>,
@@ -879,15 +908,6 @@ impl ArithmeticFPInputs {
     }
 }
 
-impl Paint {
-    pub fn as_image_filter<'a>(
-        &self,
-        crop_rect: impl Into<Option<&'a IRect>>,
-    ) -> Option<ImageFilter> {
-        paint(self, crop_rect.into().map(|r| r.into()))
-    }
-}
-
 impl Picture {
     pub fn as_image_filter<'a>(
         &self,
@@ -917,7 +937,9 @@ mod tests {
     fn test_crop_conversion_options() {
         assert_eq!(cr(None), CropRect::NO_CROP_RECT);
         assert_eq!(cr(CropRect::NO_CROP_RECT), CropRect::NO_CROP_RECT);
-        assert_eq!(cr(&CropRect::NO_CROP_RECT), CropRect::NO_CROP_RECT);
+        #[allow(clippy::needless_borrow)]
+        let cr_ref = cr(&CropRect::NO_CROP_RECT);
+        assert_eq!(cr_ref, CropRect::NO_CROP_RECT);
         let irect = IRect {
             left: 1,
             top: 2,
@@ -925,7 +947,9 @@ mod tests {
             bottom: 4,
         };
         assert_eq!(cr(irect), CropRect(Rect::from(irect)));
-        assert_eq!(cr(&irect), CropRect(Rect::from(irect)));
+        #[allow(clippy::needless_borrow)]
+        let cr_by_ref = cr(&irect);
+        assert_eq!(cr_by_ref, CropRect(Rect::from(irect)));
         let rect = Rect {
             left: 1.0,
             top: 2.0,
@@ -933,6 +957,8 @@ mod tests {
             bottom: 4.0,
         };
         assert_eq!(cr(rect), CropRect(rect));
-        assert_eq!(cr(&rect), CropRect(rect));
+        #[allow(clippy::needless_borrow)]
+        let cr_by_ref = cr(&rect);
+        assert_eq!(cr_by_ref, CropRect(rect));
     }
 }

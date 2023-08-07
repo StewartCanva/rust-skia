@@ -173,8 +173,13 @@ extern "C" void C_GrBackendFormat_ConstructGL(GrBackendFormat* uninitialized, Gr
     new(uninitialized)GrBackendFormat(GrBackendFormat::MakeGL(format, target));
 }
 
-extern "C" void C_GrBackendTexture_ConstructGL(GrBackendTexture* uninitialized, int width, int height, GrMipMapped mipMapped, const GrGLTextureInfo* glInfo) {
-    new(uninitialized)GrBackendTexture(width, height, mipMapped, *glInfo);
+extern "C" GrBackendTexture* C_GrBackendTexture_newGL(
+    int width, int height,
+    GrMipMapped mipMapped,
+    const GrGLTextureInfo* glInfo,
+    const char* label,
+    size_t labelCount) {
+    return new GrBackendTexture(width, height, mipMapped, *glInfo, std::string_view(label, labelCount));
 }
 
 extern "C" void C_GrBackendRenderTarget_ConstructGL(GrBackendRenderTarget* uninitialized, int width, int height, int sampleCnt, int stencilBits, const GrGLFramebufferInfo* glInfo) {
