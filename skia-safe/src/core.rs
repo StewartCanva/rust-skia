@@ -5,6 +5,7 @@
 
 mod alpha_type;
 mod annotation;
+pub mod arc;
 mod bbh_factory;
 mod bitmap;
 mod blend_mode;
@@ -120,6 +121,7 @@ pub use milestone::*;
 pub use paint::Paint;
 pub use tile_mode::*;
 // We keep these around for the time being.
+pub use arc::Arc;
 pub use paint::Cap as PaintCap;
 pub use paint::Join as PaintJoin;
 pub use paint::Style as PaintStyle;
@@ -134,6 +136,7 @@ pub use pixel_ref::*;
 pub use pixmap::*;
 pub use point::*;
 pub use point3::*;
+#[allow(unused)]
 pub use raster_handle_allocator::*;
 pub use rect::*;
 pub use region::Region;
@@ -153,9 +156,11 @@ pub use swizzle::*;
 pub use text_blob::*;
 pub use texture_compression_type::*;
 pub use time::*;
+#[allow(unused)]
 pub use trace_memory_dump::*;
 pub use typeface::Typeface;
 pub use types::*;
+#[allow(unused)]
 pub use un_pre_multiply::*;
 pub use vertices::Vertices;
 pub use yuva_info::YUVAInfo;

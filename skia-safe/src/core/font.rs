@@ -1,9 +1,11 @@
-use crate::{
-    interop::VecSink, prelude::*, scalar, FontHinting, FontMetrics, GlyphId, Paint, Path, Point,
-    Rect, TextEncoding, Typeface, Unichar,
-};
-use skia_bindings::{self as sb, SkFont, SkFont_PrivFlags};
 use std::{fmt, ptr};
+
+use skia_bindings::{self as sb, SkFont, SkFont_PrivFlags};
+
+use crate::{
+    interop::VecSink, prelude::*, scalar, EncodedText, FontHinting, FontMetrics, GlyphId, Paint,
+    Path, Point, Rect, Typeface, Unichar,
+};
 
 pub use skia_bindings::SkFont_Edging as Edging;
 variant_name!(Edging::Alias);
@@ -176,12 +178,9 @@ impl Font {
         }
     }
 
-    pub fn typeface(&self) -> Option<Typeface> {
+    pub fn typeface(&self) -> Typeface {
         Typeface::from_unshared_ptr(self.native().fTypeface.fPtr)
-    }
-
-    pub fn typeface_or_default(&self) -> Typeface {
-        Typeface::from_unshared_ptr(unsafe { self.native().getTypefaceOrDefault() }).unwrap()
+            .expect("typeface is expected to be non-null")
     }
 
     pub fn size(&self) -> scalar {
@@ -217,26 +216,22 @@ impl Font {
     }
 
     pub fn str_to_glyphs(&self, str: impl AsRef<str>, glyphs: &mut [GlyphId]) -> usize {
-        self.text_to_glyphs(str.as_ref().as_bytes(), TextEncoding::UTF8, glyphs)
+        self.text_to_glyphs(str.as_ref(), glyphs)
     }
 
-    pub fn text_to_glyphs(
-        &self,
-        text: &[u8],
-        encoding: TextEncoding,
-        glyphs: &mut [GlyphId],
-    ) -> usize {
+    pub fn text_to_glyphs(&self, text: impl EncodedText, glyphs: &mut [GlyphId]) -> usize {
+        let (ptr, size, encoding) = text.as_raw();
         unsafe {
             self.native()
                 .textToGlyphs(
-                    text.as_ptr() as _,
-                    text.len(),
+                    ptr,
+                    size,
                     encoding.into_native(),
                     glyphs.as_mut_ptr(),
                     // don't fail if glyphs.len() is too large to fit into an i32.
                     glyphs
                         .len()
-                        .min(i32::max_value().try_into().unwrap())
+                        .min(i32::MAX.try_into().unwrap())
                         .try_into()
                         .unwrap(),
                 )
@@ -246,19 +241,14 @@ impl Font {
     }
 
     pub fn count_str(&self, str: impl AsRef<str>) -> usize {
-        self.count_text(str.as_ref().as_bytes(), TextEncoding::UTF8)
+        self.count_text(str.as_ref())
     }
 
-    pub fn count_text(&self, text: &[u8], encoding: TextEncoding) -> usize {
+    pub fn count_text(&self, text: impl EncodedText) -> usize {
+        let (ptr, size, encoding) = text.as_raw();
         unsafe {
             self.native()
-                .textToGlyphs(
-                    text.as_ptr() as _,
-                    text.len(),
-                    encoding.into_native(),
-                    ptr::null_mut(),
-                    i32::max_value(),
-                )
+                .textToGlyphs(ptr, size, encoding.into_native(), ptr::null_mut(), i32::MAX)
                 .try_into()
                 .unwrap()
         }
@@ -266,35 +256,29 @@ impl Font {
 
     // convenience function
     pub fn str_to_glyphs_vec(&self, str: impl AsRef<str>) -> Vec<GlyphId> {
-        let str = str.as_ref().as_bytes();
-        self.text_to_glyphs_vec(str, TextEncoding::UTF8)
+        self.text_to_glyphs_vec(str.as_ref())
     }
 
     // convenience function
-    pub fn text_to_glyphs_vec(&self, text: &[u8], encoding: TextEncoding) -> Vec<GlyphId> {
-        let count = self.count_text(text, encoding);
+    pub fn text_to_glyphs_vec(&self, text: impl EncodedText) -> Vec<GlyphId> {
+        let count = self.count_text(&text);
         let mut glyphs: Vec<GlyphId> = vec![Default::default(); count];
-        let resulting_count = self.text_to_glyphs(text, encoding, glyphs.as_mut_slice());
+        let resulting_count = self.text_to_glyphs(text, glyphs.as_mut_slice());
         assert_eq!(count, resulting_count);
         glyphs
     }
 
     pub fn measure_str(&self, str: impl AsRef<str>, paint: Option<&Paint>) -> (scalar, Rect) {
-        let bytes = str.as_ref().as_bytes();
-        self.measure_text(bytes, TextEncoding::UTF8, paint)
+        self.measure_text(str.as_ref(), paint)
     }
 
-    pub fn measure_text(
-        &self,
-        text: &[u8],
-        encoding: TextEncoding,
-        paint: Option<&Paint>,
-    ) -> (scalar, Rect) {
+    pub fn measure_text(&self, text: impl EncodedText, paint: Option<&Paint>) -> (scalar, Rect) {
         let mut bounds = Rect::default();
+        let (ptr, size, encoding) = text.as_raw();
         let width = unsafe {
             self.native().measureText(
-                text.as_ptr() as _,
-                text.len(),
+                ptr,
+                size,
                 encoding.into_native(),
                 bounds.native_mut(),
                 paint.native_ptr_or_null(),
@@ -436,17 +420,28 @@ impl Font {
     }
 }
 
-#[test]
-fn test_flags() {
-    let mut font = Font::new(Typeface::default(), 10.0);
+#[cfg(test)]
+mod tests {
+    use crate::{FontMgr, FontStyle};
 
-    font.set_force_auto_hinting(true);
-    assert!(font.is_force_auto_hinting());
-    font.set_force_auto_hinting(false);
-    assert!(!font.is_force_auto_hinting());
+    use super::*;
 
-    font.set_embolden(true);
-    assert!(font.is_embolden());
-    font.set_embolden(false);
-    assert!(!font.is_embolden());
+    #[test]
+    fn test_flags() {
+        let font_mgr = FontMgr::new();
+        let typeface = font_mgr
+            .legacy_make_typeface(None, FontStyle::normal())
+            .unwrap();
+        let mut font = Font::new(typeface, 10.0);
+
+        font.set_force_auto_hinting(true);
+        assert!(font.is_force_auto_hinting());
+        font.set_force_auto_hinting(false);
+        assert!(!font.is_force_auto_hinting());
+
+        font.set_embolden(true);
+        assert!(font.is_embolden());
+        font.set_embolden(false);
+        assert!(!font.is_embolden());
+    }
 }

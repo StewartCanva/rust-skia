@@ -7,14 +7,14 @@ use std::fmt;
 #[derive(Clone, PartialEq, Debug)]
 #[repr(C)]
 pub struct ColorSpacePrimaries {
-    rx: f32,
-    ry: f32,
-    gx: f32,
-    gy: f32,
-    bx: f32,
-    by: f32,
-    wx: f32,
-    wy: f32,
+    pub rx: f32,
+    pub ry: f32,
+    pub gx: f32,
+    pub gy: f32,
+    pub bx: f32,
+    pub by: f32,
+    pub wx: f32,
+    pub wy: f32,
 }
 
 native_transmutable!(
@@ -193,6 +193,7 @@ impl RefCount for SkColorSpace {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn create_and_clone_colorspaces() {
     ColorSpace::new_srgb();
     let x = ColorSpace::new_srgb_linear();
@@ -201,6 +202,7 @@ pub fn create_and_clone_colorspaces() {
 }
 
 #[test]
+#[serial_test::serial]
 pub fn serialize_and_deserialize() {
     // TODO: it seems that the deserializer deduplicates the
     // srgb colorspace, so fix this test as soon we can create

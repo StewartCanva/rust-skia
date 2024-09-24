@@ -1,8 +1,10 @@
 //! Full build support for the SkiaBindings library, and bindings.rs file.
-use crate::build_support::{binaries_config, cargo, cargo::Target, features, platform};
+use std::path::{Path, PathBuf};
+
 use bindgen::{CodegenConfig, EnumVariation, RustTarget};
 use cc::Build;
-use std::path::{Path, PathBuf};
+
+use crate::build_support::{binaries_config, cargo, cargo::Target, features, platform};
 
 pub mod env {
     use crate::build_support::cargo;
@@ -34,6 +36,9 @@ impl Configuration {
             let mut sources: Vec<PathBuf> = vec!["src/bindings.cpp".into()];
             if features.gl {
                 sources.push("src/gl.cpp".into());
+            }
+            if features.egl {
+                sources.push("src/egl.cpp".into());
             }
             if features.vulkan {
                 sources.push("src/vulkan.cpp".into());
@@ -215,15 +220,28 @@ pub fn generate_bindings(
         cc_args.push("-fno-rtti".into());
     }
 
-    let target_str = &target.to_string();
-    cc_build.target(target_str);
-    bindgen_args.push(format!("--target={target_str}"));
-
-    // Platform specific arguments and flags.
+    // Set platform specific arguments and flags and target.
     {
-        let (bindgen, cc) = platform::bindgen_and_cc_args(&target, sysroot);
-        bindgen_args.extend(bindgen);
-        cc_args.extend(cc);
+        let args = platform::bindgen_and_cc_args(&target, sysroot);
+
+        bindgen_args.extend(args.args.clone());
+        cc_args.extend(args.args);
+
+        let mut target_str = &target.to_string();
+        let mut override_target = false;
+        if let Some(target) = &args.target_override {
+            target_str = target;
+            override_target = true;
+        }
+
+        // If we use the target() function for override targets, cc will override it based on the
+        // environment, for example when targeting the ios simulator.
+        if override_target {
+            cc_args.push(format!("--target={target_str}"));
+        } else {
+            cc_build.target(target_str);
+        }
+        bindgen_args.push(format!("--target={target_str}"));
     }
 
     {
@@ -272,26 +290,18 @@ const ALLOWLISTED_FUNCTIONS: &[&str] = &[
     "SkColorTypeIsAlwaysOpaque",
     "SkColorTypeValidateAlphaType",
     "SkRGBToHSV",
-    // this function does not allowlist (probably because of inlining):
-    "SkColorToHSV",
     "SkHSVToColor",
     "SkPreMultiplyARGB",
     "SkPreMultiplyColor",
     "SkBlendMode_AsCoeff",
     "SkBlendMode_Name",
     "SkSwapRB",
-    // functions for which the doc generation fails
-    "SkColorFilter_asComponentTable",
     // pathops/
     "Op",
     "Simplify",
     "TightBounds",
     "AsWinding",
-    // utils/
-    "Sk3LookAt",
-    "Sk3Perspective",
-    "Sk3MapPts",
-    "SkUnitCubicInterp",
+    "SkYUVColorSpaceIsLimitedRange",
 ];
 
 const OPAQUE_TYPES: &[&str] = &[
@@ -350,8 +360,6 @@ const OPAQUE_TYPES: &[&str] = &[
     "SkBitmap_HeapAllocator",
     "SkColorFilter",
     "SkDeque_F2BIter",
-    "SkDrawLooper",
-    "SkDrawLooper_Context",
     "SkDrawable_GpuDrawHandler",
     "SkFlattenable",
     "SkFontMgr",
@@ -410,6 +418,10 @@ const OPAQUE_TYPES: &[&str] = &[
     "std::tuple",
     // Homebrew macOS LLVM 13
     "std::tuple_.*",
+    // Since 3.1.57 of the emsdk: <https://github.com/rust-skia/rust-skia/issues/975>
+    "std::__2::tuple.*",
+    // clang 18
+    "std::__1::tuple.*",
     // m93: private, exposed by Paint::asBlendMode(), fails layout tests.
     "skstd::optional",
     // m100
@@ -427,6 +439,10 @@ const OPAQUE_TYPES: &[&str] = &[
     "FILE",
     // m114: Results in wrongly sized template specializations.
     "skia_private::THashMap",
+    // m121:
+    "skgpu::MutableTextureState",
+    // emscripten: Uses SkLRUCache (which is blocklisted)
+    "skia::textlayout::ParagraphCache",
 ];
 
 const BLOCKLISTED_TYPES: &[&str] = &[
@@ -461,6 +477,8 @@ const BLOCKLISTED_TYPES: &[&str] = &[
     "std::list.*",
     "std::list__Unchecked.*",
     "std::_List_iterator.*",
+    // <https://github.com/rust-skia/rust-skia/issues/1009> (feature vulkan)
+    "PFN_vkVoidFunction",
 ];
 
 #[derive(Debug)]
@@ -475,17 +493,31 @@ impl bindgen::callbacks::ParseCallbacks for ParseCallbacks {
         _variant_value: bindgen::callbacks::EnumVariantValue,
     ) -> Option<String> {
         enum_name.and_then(|enum_name| {
-            ENUM_TABLE
+            ENUM_REWRITES
                 .iter()
                 .find(|n| n.0 == enum_name)
                 .map(|(_, replacer)| replacer(enum_name, original_variant_name))
         })
     }
+
+    fn item_name(&self, original_item_name: &str) -> Option<String> {
+        ITEM_RENAMES
+            .iter()
+            .find(|(original, _)| *original == original_item_name)
+            .map(|(_, replacement)| replacement.to_string())
+    }
 }
 
 type EnumEntry = (&'static str, fn(&str, &str) -> String);
 
-const ENUM_TABLE: &[EnumEntry] = &[
+const ITEM_RENAMES: &[(&str, &str)] = &[
+    ("std___1_string_view", "std_string_view"),
+    ("std___2_string_view", "std_string_view"),
+    ("std___1_string", "std_string"),
+    ("std___2_string", "std_string"),
+];
+
+const ENUM_REWRITES: &[EnumEntry] = &[
     //
     // codec/
     //
@@ -587,6 +619,7 @@ const ENUM_TABLE: &[EnumEntry] = &[
     //
     // gpu/
     //
+    ("Origin", rewrite::k_xxx),
     ("GrGLStandard", rewrite::k_xxx_name),
     ("GrGLFormat", rewrite::k_xxx),
     ("GrSurfaceOrigin", rewrite::k_xxx_name),
@@ -662,6 +695,11 @@ const ENUM_TABLE: &[EnumEntry] = &[
     ("AlphaOption", rewrite::k_xxx),
     // SkWebpEncoder.h
     ("Compression", rewrite::k_xxx),
+    // m118:
+    ("GrPurgeResourceOptions", rewrite::k_xxx),
+    ("GrSyncCpu", rewrite::k_xxx),
+    // m129:
+    ("Clamp", rewrite::k_xxx), // SkColorFilters
 ];
 
 pub(crate) mod rewrite {
@@ -713,17 +751,19 @@ pub(crate) mod rewrite {
     }
 }
 
+#[allow(unused)]
 pub use definitions::{Definition, Definitions};
 
 pub(crate) mod definitions {
-    use super::env;
-    use crate::build_support::features;
     use std::{
         collections::HashSet,
         fs,
         io::Write,
         path::{Path, PathBuf},
     };
+
+    use super::env;
+    use crate::build_support::features;
 
     /// A preprocessor definition.
     pub type Definition = (String, Option<String>);
@@ -755,48 +795,65 @@ pub(crate) mod definitions {
     // Extracts definitions from ninja files that need to be parsed for build consistency.
     pub fn from_ninja_features(
         features: &features::Features,
+        use_system_libraries: bool,
         output_directory: &Path,
     ) -> Definitions {
-        let ninja_files = ninja_files_for_features(features);
-        from_ninja_files(ninja_files, output_directory)
+        let ninja_files = ninja_files_for_features(features, use_system_libraries);
+        from_ninja_files(&ninja_files, output_directory)
     }
 
-    fn from_ninja_files(ninja_files: Vec<PathBuf>, output_directory: &Path) -> Definitions {
+    fn from_ninja_files(ninja_files: &[PathBuf], output_directory: &Path) -> Definitions {
         let mut definitions = Vec::new();
 
-        for ninja_file in &ninja_files {
+        for ninja_file in ninja_files {
             let ninja_file = output_directory.join(ninja_file);
-            let contents = fs::read_to_string(ninja_file).unwrap();
-            definitions = combine(definitions, from_ninja_file_content(contents))
+            let contents = fs::read_to_string(&ninja_file).unwrap_or_else(|err| {
+                panic!(
+                    "Failed to read ninja file: `{}`: {err}",
+                    ninja_file.display()
+                )
+            });
+            definitions = combine(definitions, from_ninja_file_content(&ninja_file, contents))
         }
 
         definitions
     }
 
     /// Parse a defines = line from a ninja build file.
-    fn from_ninja_file_content(ninja_file: impl AsRef<str>) -> Definitions {
+    fn from_ninja_file_content(file_path: &Path, contents: impl AsRef<str>) -> Definitions {
         let defines = {
             let prefix = "defines = ";
-            let defines = ninja_file
+            let defines = contents
                 .as_ref()
                 .lines()
                 .find(|s| s.starts_with(prefix))
-                .expect("missing a line with the prefix 'defines =' in a .ninja file");
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Missing a line starting with `defines =` in: {}",
+                        file_path.display()
+                    )
+                });
             &defines[prefix.len()..]
         };
         from_defines_str(defines)
     }
 
-    fn ninja_files_for_features(features: &features::Features) -> Vec<PathBuf> {
+    fn ninja_files_for_features(
+        features: &features::Features,
+        use_system_libraries: bool,
+    ) -> Vec<PathBuf> {
         let mut files = vec!["obj/skia.ninja".into()];
         if features.text_layout {
             files.extend(vec![
                 "obj/modules/skshaper/skshaper.ninja".into(),
                 "obj/modules/skparagraph/skparagraph.ninja".into(),
-                // shaper.cpp includes SkLoadICU.h
-                "obj/third_party/icu/icu.ninja".into(),
-                "obj/modules/skunicode/skunicode.ninja".into(),
+                "obj/modules/skunicode/skunicode_core.ninja".into(),
+                "obj/modules/skunicode/skunicode_icu.ninja".into(),
             ]);
+            // shaper.cpp includes SkLoadICU.h
+            if !use_system_libraries {
+                files.push("obj/third_party/icu/icu.ninja".into())
+            }
         }
         if features.svg {
             files.push("obj/modules/svg/svg.ninja".into());
@@ -822,17 +879,49 @@ pub(crate) mod definitions {
                 if let Some(stripped) = d.strip_prefix(PREFIX) {
                     stripped
                 } else {
-                    panic!("missing '{PREFIX}' prefix from a definition")
+                    panic!("Missing '{PREFIX}' prefix from a definition")
                 }
             })
             .map(|d| {
                 let items: Vec<&str> = d.splitn(2, '=').collect();
                 match items.len() {
                     1 => (items[0].to_string(), None),
-                    2 => (items[0].to_string(), Some(items[1].to_string())),
-                    _ => panic!("internal error"),
+                    2 => (items[0].to_string(), Some(unescape_ninja(items[1]))),
+                    _ => panic!("Internal error"),
                 }
             })
             .collect()
+    }
+
+    fn unescape_ninja(input: &str) -> String {
+        unescape(&unescape(input, '$'), '\\')
+    }
+
+    fn unescape(input: &str, escape_character: char) -> String {
+        let mut result = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == escape_character {
+                if let Some(&next_ch) = chars.peek() {
+                    chars.next();
+                    result.push(next_ch);
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        result
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn properly_unescape_trivial_abi() {
+            // This happens if SKIA_DEBUG=1
+            let str = r#"\[\[clang$:$:trivial_abi\]\]"#;
+            assert_eq!(super::unescape_ninja(str), "[[clang::trivial_abi]]");
+        }
     }
 }
