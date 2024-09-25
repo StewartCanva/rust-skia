@@ -2,11 +2,7 @@ use skia_bindings as sb;
 use std::ptr;
 
 pub use skia_bindings::GrBackendApi as BackendAPI;
-variant_name!(BackendAPI::Dawn);
-
-#[deprecated(since = "0.35.0", note = "Use Mipmapped (with a lowercase 'm')")]
-pub use skia_bindings::GrMipmapped as MipMapped;
-variant_name!(MipMapped::Yes);
+variant_name!(BackendAPI::OpenGL);
 
 pub use skia_bindings::GrSurfaceOrigin as SurfaceOrigin;
 variant_name!(SurfaceOrigin::BottomLeft);
@@ -44,4 +40,8 @@ native_transmutable!(sb::GrFlushInfo, FlushInfo, flush_info_layout);
 pub use sb::GrSemaphoresSubmitted as SemaphoresSubmitted;
 variant_name!(SemaphoresSubmitted::Yes);
 
-// TODO: wrap GrPrepareForExternalIORequests
+pub use sb::GrPurgeResourceOptions as PurgeResourceOptions;
+variant_name!(PurgeResourceOptions::AllResources);
+
+pub use sb::GrSyncCpu as SyncCpu;
+variant_name!(SyncCpu::Yes);

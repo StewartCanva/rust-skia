@@ -1,9 +1,10 @@
 #include "bindings.h"
 
+
+#include "include/gpu/ganesh/vk/GrBackendDrawableInfo.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrBackendDrawableInfo.h"
-#include "include/gpu/GrBackendSurfaceMutableState.h"
 #include "include/gpu/GrYUVABackendTextures.h"
+#include "include/gpu/MutableTextureState.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/core/SkCanvas.h"
@@ -12,6 +13,8 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkImageGenerator.h"
+
+extern "C" void C_GpuUnreferencedTypes(skgpu::Origin *) {}
 
 //
 // core/SkSurface.h
@@ -92,31 +95,15 @@ extern "C" void C_GrBackendFormat_makeTexture2D(const GrBackendFormat* self, GrB
 }
 
 //
-// gpu/GrBackendSurfaceMutableState.h
-//
-
-extern "C" void C_GrBackendSurfaceMutableState_Construct(GrBackendSurfaceMutableState* uninitialized) {
-    new(uninitialized)GrBackendSurfaceMutableState();
-}
-
-extern "C" void C_GrBackendSurfaceMutableState_destruct(GrBackendSurfaceMutableState* self) {
-    self->~GrBackendSurfaceMutableState();
-}
-
-//
 // gpu/MutableTextureState.h
 //
 
-extern "C" void C_MutableTextureState_Construct(skgpu::MutableTextureState* uninitialized) {
-    new(uninitialized)skgpu::MutableTextureState();
+extern "C" skgpu::MutableTextureState* C_MutableTextureState_Construct() {
+    return new skgpu::MutableTextureState();
 }
 
-extern "C" void C_MutableTextureState_CopyConstruct(skgpu::MutableTextureState* uninitialized, const skgpu::MutableTextureState* state) {
-    new(uninitialized)skgpu::MutableTextureState(*state);
-}
-
-extern "C" void C_MutableTextureState_destruct(skgpu::MutableTextureState* self) {
-    self->~MutableTextureState();
+extern "C" skgpu::MutableTextureState* C_MutableTextureState_CopyConstruct(const skgpu::MutableTextureState* state) {
+    return new skgpu::MutableTextureState(*state);
 }
 
 extern "C" skgpu::BackendApi C_MutableTextureState_backend(const skgpu::MutableTextureState* self) {
@@ -182,8 +169,8 @@ extern "C" void C_GrDirectContext_directContextId(const GrDirectContext* self, G
     *r = self->directContextID();
 }
 
-extern "C" void C_GrDirectContext_performDeferredCleanup(GrDirectContext* self, long msNotUsed, bool scratchResourcesOnly) {
-    self->performDeferredCleanup(std::chrono::milliseconds(msNotUsed), scratchResourcesOnly);
+extern "C" void C_GrDirectContext_performDeferredCleanup(GrDirectContext* self, long msNotUsed, GrPurgeResourceOptions opts) {
+    self->performDeferredCleanup(std::chrono::milliseconds(msNotUsed), opts);
 }
 
 //
@@ -323,7 +310,7 @@ extern "C" SkImage* C_SkImages_CrossContextTextureFromPixmap(
 }
 
 extern "C" SkImage *C_SkImages_TextureFromCompressedTextureData(GrDirectContext *context, SkData *data, int width, int height,
-                                                SkTextureCompressionType type, GrMipMapped mipMapped,
+                                                SkTextureCompressionType type, skgpu::Mipmapped mipMapped,
                                                 GrProtected prot) {
     return SkImages::TextureFromCompressedTextureData(context, sp(data), width, height, type, mipMapped, prot).release();
 }
@@ -331,7 +318,7 @@ extern "C" SkImage *C_SkImages_TextureFromCompressedTextureData(GrDirectContext 
 extern "C" SkImage* C_SkImages_TextureFromImage(
         GrDirectContext* context,
         const SkImage* self,
-        GrMipMapped mipMapped,
+        skgpu::Mipmapped mipMapped,
         skgpu::Budgeted budgeted) {
     return SkImages::TextureFromImage(context, self, mipMapped, budgeted).release();
 }
@@ -339,7 +326,7 @@ extern "C" SkImage* C_SkImages_TextureFromImage(
 extern "C" SkImage* C_SkImages_TextureFromYUVAPixmaps(
     GrRecordingContext* context,
     const SkYUVAPixmaps* pixmaps,
-    GrMipmapped buildMips,
+    skgpu::Mipmapped buildMips,
     bool limitToMaxTextureSize,
     SkColorSpace* imageColorSpace
 ) {
@@ -381,9 +368,11 @@ extern "C" SkSurface* C_SkSurfaces_RenderTarget(
     GrRecordingContext* context,
     skgpu::Budgeted budgeted,
     const SkImageInfo* imageInfo,
-    int sampleCount, GrSurfaceOrigin surfaceOrigin,
+    int sampleCount,
+    GrSurfaceOrigin surfaceOrigin,
     const SkSurfaceProps* surfaceProps,
-    bool shouldCreateWithMips) {
+    bool shouldCreateWithMips,
+    bool isProtected) {
     return SkSurfaces::RenderTarget(
             context,
             budgeted,
@@ -391,7 +380,8 @@ extern "C" SkSurface* C_SkSurfaces_RenderTarget(
             sampleCount,
             surfaceOrigin,
             surfaceProps,
-            shouldCreateWithMips).release();
+            shouldCreateWithMips, 
+            isProtected).release();
 }
 
 extern "C" SkSurface* C_SkSurfaces_WrapBackendTexture(

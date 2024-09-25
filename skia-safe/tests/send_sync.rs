@@ -17,7 +17,7 @@ fn sendable_implements_send() {
 }
 
 mod codec {
-    use skia_safe::{codec, Codec};
+    use skia_safe::{codec, codecs, Codec};
     use static_assertions::*;
 
     // Codec seems to call into SkPngChunkReader*
@@ -28,20 +28,14 @@ mod codec {
     assert_impl_all!(codec::ZeroInitialized: Send, Sync);
     assert_impl_all!(codec::ScanlineOrder: Send, Sync);
 
-    assert_impl_all!(codec::BmpDecoder: Send, Sync);
-    assert_impl_all!(codec::GifDecoder: Send, Sync);
-    assert_impl_all!(codec::IcoDecoder: Send, Sync);
-    assert_impl_all!(codec::JpegDecoder: Send, Sync);
-    assert_impl_all!(codec::PngDecoder: Send, Sync);
-    assert_impl_all!(codec::WbmpDecoder: Send, Sync);
-    #[cfg(feature = "webp_decode")]
-    assert_impl_all!(codec::WebpDecoder: Send, Sync);
+    assert_impl_all!(codecs::Decoder: Send, Sync);
 }
 
 mod core {
     use skia_safe::*;
     use static_assertions::*;
 
+    assert_impl_all!(Arc: Send, Sync);
     // SkBitmap is not thread safe. Each thread must have its own copy of SkBitmap fields,
     // although threads may share the underlying pixel array.
     assert_not_impl_any!(Bitmap: Send, Sync);
@@ -140,7 +134,9 @@ mod docs {
 
     assert_impl_all!(pdf::AttributeList: Send, Sync);
     assert_not_impl_any!(pdf::StructureElementNode: Send, Sync);
+    assert_impl_all!(pdf::DateTime: Send, Sync);
     assert_not_impl_any!(pdf::Metadata: Send, Sync);
+    assert_impl_all!(pdf::CompressionLevel: Send, Sync);
 }
 
 mod effects {
@@ -164,7 +160,6 @@ mod gpu {
     assert_impl_all!(BackendFormat: Send, Sync);
     assert_impl_all!(BackendTexture: Send, Sync);
     assert_impl_all!(BackendRenderTarget: Send, Sync);
-    assert_impl_all!(BackendSurfaceMutableState: Send, Sync);
     assert_impl_all!(ContextOptions: Send, Sync);
     assert_impl_all!(DriverBugWorkarounds: Send, Sync);
     // The Context* implementations check for single ownership before mutation, so no Send and Sync
@@ -178,6 +173,14 @@ mod gpu {
     assert_impl_all!(YUVABackendTextures: Send, Sync);
     assert_impl_all!(MutableTextureState: Send, Sync);
     assert_impl_all!(BackendApi: Send, Sync);
+
+    // gpu/types.rs
+    assert_impl_all!(BackendAPI: Send, Sync);
+    assert_impl_all!(SurfaceOrigin: Send, Sync);
+    assert_not_impl_any!(FlushInfo: Send, Sync);
+    assert_impl_all!(SemaphoresSubmitted: Send, Sync);
+    assert_impl_all!(PurgeResourceOptions: Send, Sync);
+    assert_impl_all!(SyncCpu: Send, Sync);
 
     #[cfg(feature = "gl")]
     mod gl {
@@ -226,9 +229,7 @@ mod gpu {
     mod d3d {
         use skia_safe::gpu::d3d::*;
         use static_assertions::*;
-        // not sure if BackendContext is Sync, so we'd set it to Send only for now.
-        assert_impl_all!(BackendContext: Send);
-        assert_not_impl_any!(BackendContext: Sync);
+        assert_impl_all!(BackendContext: Send, Sync);
         assert_impl_all!(TextureResourceInfo: Send, Sync);
         assert_impl_all!(FenceInfo: Send, Sync);
         assert_impl_all!(SurfaceInfo: Send, Sync);
@@ -246,12 +247,14 @@ mod textlayout {
     assert_not_impl_any!(FontCollection: Send, Sync);
     // ParagraphCache seems to be fully thread safe, but I don't think it is itself meant to be shared between threads.
     assert_not_impl_any!(ParagraphCache: Send, Sync);
-    assert_impl_all!(Paragraph: Send, Sync);
+    assert_not_impl_any!(Paragraph: Send, Sync);
+    assert_impl_all!(paragraph::GlyphInfo: Send, Sync);
     assert_impl_all!(paragraph::FontInfo: Send, Sync);
-    assert_not_impl_all!(paragraph::VisitorInfo: Send, Sync);
-    assert_not_impl_all!(paragraph::ExtendedVisitorInfo: Send, Sync);
+    assert_not_impl_any!(paragraph::VisitorInfo: Send, Sync);
+    assert_not_impl_any!(paragraph::ExtendedVisitorInfo: Send, Sync);
     assert_impl_all!(paragraph::VisitorFlags: Send, Sync);
     assert_impl_all!(paragraph::GlyphClusterInfo: Send, Sync);
+
     assert_impl_all!(ParagraphBuilder: Send, Sync);
     assert_impl_all!(StrutStyle: Send, Sync);
     assert_impl_all!(TextShadow: Send, Sync);
@@ -270,7 +273,6 @@ mod textlayout {
 #[cfg(feature = "textlayout")]
 mod shaper {
     use skia_safe::shaper::*;
-    use skia_safe::Shaper;
     use static_assertions::*;
     assert_impl_all!(Shaper: Send, Sync);
     assert_not_impl_any!(FontRunIterator: Send, Sync);

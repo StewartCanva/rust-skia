@@ -1,10 +1,14 @@
-use super::prelude::*;
-use crate::build_support::{cargo, clang};
 use std::path::PathBuf;
+
+use super::prelude::*;
 
 pub struct Msvc;
 
 impl PlatformDetails for Msvc {
+    fn uses_freetype(&self, _config: &BuildConfiguration) -> bool {
+        false
+    }
+
     fn gn_args(&self, config: &BuildConfiguration, builder: &mut GnArgsBuilder) {
         if let Some(win_vc) = resolve_vc() {
             builder.arg(
@@ -40,6 +44,11 @@ impl PlatformDetails for Msvc {
             }
         }
 
+        // Disable `[[clang::trivial_abi]]` because it leads to ABI mismatches if the
+        // bindings are compiled with a compiler other than clang (e.g. MSVC).
+        // (see <https://groups.google.com/g/skia-discuss/c/3rpeWuPcD9Y/m/CySLakaTAAAJ>)
+        builder.arg("is_trivial_abi", no());
+
         // Code on MSVC needs to be compiled differently (e.g. with /MT or /MD)
         // depending on the runtime being linked. (See
         // <https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes>)
@@ -65,6 +74,10 @@ impl PlatformDetails for Msvc {
 pub struct Generic;
 
 impl PlatformDetails for Generic {
+    fn uses_freetype(&self, _config: &BuildConfiguration) -> bool {
+        false
+    }
+
     fn gn_args(&self, _config: &BuildConfiguration, builder: &mut GnArgsBuilder) {
         builder.target_os_and_default_cpu("win");
     }
@@ -90,7 +103,10 @@ fn generic_link_libraries(features: &Features) -> Vec<String> {
 /// TODO: sophisticate: <https://github.com/alexcrichton/cc-rs/blob/master/src/windows_registry.rs0>
 fn resolve_vc() -> Option<PathBuf> {
     if let Some(install_dir) = cargo::env_var("VCINSTALLDIR") {
-        return Some(PathBuf::from(install_dir));
+        // vcvars.bat may end up setting VCINSTALLDIR to a path with trailing backslash, we
+        // invoke GN  as win_vc="the path", and we end up with "foo\", which erroneously
+        // escapes the quote instead of closing.
+        return Some(PathBuf::from(install_dir.trim_end_matches('\\')));
     }
 
     let releases = [("Program Files", "2022"), ("Program Files (x86)", "2019")];
@@ -143,7 +159,7 @@ mod llvm {
         let path: PathBuf = [home, "lib", "clang"].into_iter().collect();
         let mut highest_version = None;
         let mut highest_version_path = None;
-        for entry in fs::read_dir(&path).ok()? {
+        for entry in fs::read_dir(path).ok()? {
             let entry = entry.ok()?;
             let path = entry.path();
             if path.is_dir() {

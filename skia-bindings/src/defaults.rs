@@ -2,9 +2,16 @@
 #![allow(clippy::derivable_impls)]
 
 use crate::{
-    SkBlendMode, SkBlurStyle, SkCanvas_Lattice_RectType, SkClipOp, SkPaint_Cap, SkPaint_Join,
-    SkParsePath_PathEncoding, SkPathDirection, SkTileMode, SkYUVColorSpace,
+    SkArc_Type, SkBlendMode, SkBlurStyle, SkCanvas_Lattice_RectType, SkClipOp,
+    SkPDF_Metadata_CompressionLevel, SkPaint_Cap, SkPaint_Join, SkParsePath_PathEncoding,
+    SkPathDirection, SkTileMode, SkYUVColorSpace,
 };
+
+impl Default for SkArc_Type {
+    fn default() -> Self {
+        Self::Arc
+    }
+}
 
 impl Default for SkBlendMode {
     fn default() -> Self {
@@ -64,6 +71,12 @@ impl Default for SkTileMode {
 impl Default for SkParsePath_PathEncoding {
     fn default() -> Self {
         SkParsePath_PathEncoding::Absolute
+    }
+}
+
+impl Default for SkPDF_Metadata_CompressionLevel {
+    fn default() -> Self {
+        SkPDF_Metadata_CompressionLevel::Default
     }
 }
 
