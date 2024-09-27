@@ -134,7 +134,6 @@ impl FinalBuildConfiguration {
                 .arg("skia_use_libwebp_decode", yes_if(features.webp_decode))
                 .arg("skia_use_system_zlib", yes_if(use_system_libraries))
                 .arg("skia_use_freetype", yes())
-                .arg("skia_use_fonthost_mac", no())
                 .arg("skia_use_system_freetype2", no())
                 .arg("skia_use_freetype_woff2", yes())
                 .arg("skia_use_xps", no())
