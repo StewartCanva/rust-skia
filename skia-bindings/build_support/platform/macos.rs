@@ -21,8 +21,8 @@ impl PlatformDetails for MacOs {
         builder.cflags(flags());
 
         builder
-            .arg("skia_use_system_freetype2", no())
-            .arg("skia_use_freetype", yes())
+            // .arg("skia_use_system_freetype2", no())
+            // .arg("skia_use_freetype", yes())
             .arg("skia_enable_fontmgr_custom_empty", yes());
     }
 
