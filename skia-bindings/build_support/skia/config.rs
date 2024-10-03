@@ -186,9 +186,11 @@ impl FinalBuildConfiguration {
             }
 
             let use_freetype = platform::uses_freetype(build);
+            println!("Uses freetype: {}", use_freetype);
             builder.arg("skia_use_freetype", yes_if(use_freetype));
             if use_freetype {
                 if features.embed_freetype {
+                    println!("Embedding freetype");
                     builder.arg("skia_use_system_freetype2", no());
                 } else {
                     // third_party/freetype2/BUILD.gn hard-codes /usr/include/freetype2
