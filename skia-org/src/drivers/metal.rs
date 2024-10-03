@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, ptr};
 
 use cocoa::foundation::NSAutoreleasePool;
 use foreign_types_shared::ForeignType;
@@ -32,10 +32,11 @@ impl DrawingDriver for Metal {
             mtl::BackendContext::new(
                 device.as_ptr() as mtl::Handle,
                 queue.as_ptr() as mtl::Handle,
+                ptr::null(),
             )
         };
 
-        let context = gpu::direct_contexts::make_metal(&backend, None).unwrap();
+        let context = gpu::DirectContext::new_metal(&backend, None).unwrap();
 
         Self {
             context,
@@ -50,7 +51,7 @@ impl DrawingDriver for Metal {
         (width, height): (i32, i32),
         path: &Path,
         name: &str,
-        func: impl Fn(&Canvas),
+        func: impl Fn(&mut Canvas),
     ) {
         let _image_pool = AutoreleasePool::new();
 
@@ -63,7 +64,6 @@ impl DrawingDriver for Metal {
             gpu::SurfaceOrigin::TopLeft,
             None,
             false,
-            None,
         )
         .unwrap();
 

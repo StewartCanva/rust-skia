@@ -106,15 +106,15 @@ impl TypefaceFontProvider {
         Self::from_ptr(unsafe { sb::C_TypefaceFontProvider_new() }).unwrap()
     }
 
-    pub fn register_typeface<'a>(
+    pub fn register_typeface(
         &mut self,
         typeface: Typeface,
-        alias: impl Into<Option<&'a str>>,
+        alias: Option<impl AsRef<str>>,
     ) -> usize {
         unsafe {
-            match alias.into() {
+            match alias {
                 Some(alias) => {
-                    let alias = interop::String::from_str(alias);
+                    let alias = interop::String::from_str(alias.as_ref());
                     sb::C_TypefaceFontProvider_registerTypeface(
                         self.native_mut(),
                         typeface.into_ptr(),
@@ -137,7 +137,7 @@ mod tests {
     use crate::{
         prelude::{NativeAccess, NativeRefCounted, NativeRefCountedBase},
         textlayout::FontCollection,
-        FontMgr, FontStyle,
+        Typeface,
     };
 
     #[test]
@@ -146,9 +146,7 @@ mod tests {
         let mut style_set = TypefaceFontStyleSet::new("");
         assert_eq!(style_set.native().ref_counted_base()._ref_cnt(), 1);
 
-        let tf = FontMgr::new()
-            .legacy_make_typeface(None, FontStyle::default())
-            .unwrap();
+        let tf = Typeface::default();
         let base_cnt = tf.native().ref_counted_base()._ref_cnt();
 
         let tfclone = tf.clone();
@@ -166,9 +164,7 @@ mod tests {
     #[serial_test::serial]
     fn treat_font_provider_as_font_mgr() {
         let mut font_collection = FontCollection::new();
-        let typeface = FontMgr::new()
-            .legacy_make_typeface(None, FontStyle::default())
-            .unwrap();
+        let typeface = Typeface::default();
         let mut manager = TypefaceFontProvider::new();
         manager.register_typeface(typeface, Some("AlArabiya"));
         assert_eq!(font_collection.font_managers_count(), 0);

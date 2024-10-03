@@ -10,27 +10,26 @@
 #include "include/core/SkStream.h"
 
 
-typedef SkData* (*loadSkData)(const char resource_path[], const char resource_name[], void* context);
+typedef SkData* (*loadSkData)(const char resource_path[], const char resource_name[]);
 
-typedef SkTypeface* (*loadSkTypeface)(const char resource_path[], const char resource_name[], void* context);
+typedef SkTypeface* (*loadSkTypeface)(const char resource_path[], const char resource_name[]);
 
 class ImageResourceProvider final : public skresources::ResourceProvider {
 
 private:
     loadSkData _loadCb;
     loadSkTypeface _loadTfCb;
-    void* _loadContext;
 
 public:
-    ImageResourceProvider(loadSkData loadCb, loadSkTypeface loadTfCb, void* loadContext) {
+    ImageResourceProvider(loadSkData loadCb, loadSkTypeface loadTfCb) {
         _loadCb = loadCb;
         _loadTfCb = loadTfCb;
-        _loadContext = loadContext;
     }
+
 
     sk_sp<SkData> load(const char resource_path [],
                        const char resource_name []) const {
-        return sp(_loadCb(resource_path, resource_name, _loadContext));
+        return sp(((loadSkData)_loadCb)(resource_path,resource_name));
     }
 
 
@@ -44,7 +43,7 @@ public:
 
     sk_sp<SkTypeface> loadTypeface(const char name[],
                                    const char url[]) const {
-        return sp(_loadTfCb(url, name, _loadContext));
+        return sp(((loadSkTypeface)_loadTfCb)(url,name));
     }
 
     ~ImageResourceProvider() {}
@@ -52,11 +51,10 @@ public:
 };
 
 
-extern "C" SkSVGDOM* C_SkSVGDOM_MakeFromStream(SkStream& stream, SkFontMgr* fontMgr, loadSkData loadCb, loadSkTypeface loadTfCb, void* loadContext) {
-    auto provider = sk_make_sp<ImageResourceProvider>(loadCb, loadTfCb, loadContext);
+extern "C" SkSVGDOM* C_SkSVGDOM_MakeFromStream(SkStream& stream, loadSkData loadCb, loadSkTypeface loadTfCb) {
+    auto provider = sk_make_sp<ImageResourceProvider>(loadCb, loadTfCb);
     auto builder = SkSVGDOM::Builder();
     builder.setResourceProvider(provider);
-    builder.setFontManager(sp(fontMgr));
     return builder.make(stream).release();
 }
 

@@ -11,10 +11,16 @@ impl DrawingDriver for Svg {
         Self
     }
 
-    fn draw_image(&mut self, size: (i32, i32), path: &Path, name: &str, func: impl Fn(&Canvas)) {
+    fn draw_image(
+        &mut self,
+        size: (i32, i32),
+        path: &Path,
+        name: &str,
+        func: impl Fn(&mut Canvas),
+    ) {
         use skia_safe::Rect;
-        let canvas = skia_safe::svg::Canvas::new(Rect::from_size(size), None);
-        func(&canvas);
+        let mut canvas = skia_safe::svg::Canvas::new(Rect::from_size(size), None);
+        func(&mut canvas);
         let data = canvas.end();
         artifact::write_file(data.as_bytes(), path, name, "svg");
     }

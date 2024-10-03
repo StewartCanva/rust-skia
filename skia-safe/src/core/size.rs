@@ -67,11 +67,11 @@ impl Size {
         }
     }
 
-    pub const fn from_isize(src: ISize) -> Size {
+    pub fn from_isize(src: ISize) -> Size {
         Self::new(src.width as _, src.height as _)
     }
 
-    pub const fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
         Self::new(0.0, 0.0)
     }
 

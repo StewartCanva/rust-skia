@@ -1,9 +1,6 @@
 use crate::{
     prelude::*,
-    private::{
-        is_finite,
-        safe32::{sk32, sk64},
-    },
+    private::safe32::{sk32, sk64},
     Contains, IPoint, ISize, IVector, Point, Size, Vector,
 };
 use skia_bindings::{self as sb, SkIRect, SkRect};
@@ -427,7 +424,18 @@ impl Rect {
     }
 
     pub fn is_finite(&self) -> bool {
-        is_finite(&[self.left, self.top, self.right, self.bottom])
+        let mut accum: f32 = 0.0;
+        accum *= self.left;
+        accum *= self.top;
+        accum *= self.right;
+        accum *= self.bottom;
+
+        // accum is either NaN or it is finite (zero).
+        debug_assert!(0.0 == accum || accum.is_nan());
+
+        // value==value will be true iff value is not NaN
+        // TODO: is it faster to say !accum or accum==accum?
+        !accum.is_nan()
     }
 
     pub const fn x(&self) -> f32 {

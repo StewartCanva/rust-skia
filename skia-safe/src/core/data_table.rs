@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use skia_bindings::{self as sb, SkDataTable, SkRefCntBase};
 use std::{
+    convert::TryInto,
     ffi::{c_void, CStr},
     fmt, mem,
     ops::Index,

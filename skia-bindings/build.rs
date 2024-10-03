@@ -54,7 +54,6 @@ fn main() -> Result<(), io::Error> {
             );
             let definitions = skia_bindgen::definitions::from_ninja_features(
                 &features,
-                final_build_configuration.use_system_libraries,
                 &binaries_config.output_directory,
             );
             generate_bindings(
@@ -97,7 +96,6 @@ fn main() -> Result<(), io::Error> {
             );
             let definitions = skia_bindgen::definitions::from_ninja_features(
                 &features,
-                final_build_configuration.use_system_libraries,
                 &binaries_config.output_directory,
             );
             generate_bindings(

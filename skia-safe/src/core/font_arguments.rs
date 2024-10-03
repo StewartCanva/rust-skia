@@ -39,7 +39,7 @@ pub mod palette {
     #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
     #[repr(C)]
     pub struct Override {
-        pub index: u16,
+        pub index: i32,
         pub color: Color,
     }
 

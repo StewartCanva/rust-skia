@@ -1,23 +1,21 @@
-use std::path::Path;
+use std::{ffi, path::Path, ptr};
 
 use skia_safe::{
     gpu::{self, d3d, Budgeted, Protected},
     Canvas, ImageInfo,
 };
+use winapi::{
+    shared::{
+        dxgi,
+        guiddef::GUID,
+        winerror::{HRESULT, S_OK},
+    },
+    um::{d3d12, d3dcommon},
+    Interface,
+};
+use wio::com::ComPtr;
 
 use crate::{artifact, drivers::DrawingDriver, Driver};
-
-use windows::Win32::Graphics::{
-    Direct3D::D3D_FEATURE_LEVEL_11_0,
-    Direct3D12::{
-        D3D12CreateDevice, ID3D12CommandQueue, ID3D12Device, D3D12_COMMAND_LIST_TYPE_DIRECT,
-        D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
-    },
-    Dxgi::{
-        CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory4, DXGI_ADAPTER_FLAG,
-        DXGI_ADAPTER_FLAG_NONE, DXGI_ADAPTER_FLAG_SOFTWARE,
-    },
-};
 
 pub struct D3D {
     context: gpu::DirectContext,
@@ -27,24 +25,34 @@ impl DrawingDriver for D3D {
     const DRIVER: Driver = Driver::D3d;
 
     fn new() -> Self {
-        let factory =
-            unsafe { CreateDXGIFactory1::<IDXGIFactory4>() }.expect("Creating DXGI factory");
+        let factory: ComPtr<dxgi::IDXGIFactory1> =
+            resolve_interface(|iid, ptr| unsafe { dxgi::CreateDXGIFactory1(iid, ptr) })
+                .expect_ok("Creating DXGI factory");
 
-        let adapter = get_hardware_adapter(&factory).expect("Creating DXGI Adapter");
+        let adapter = resolve_specific(|ptr| unsafe { factory.EnumAdapters1(0, ptr) })
+            .expect_ok("Creating DXGI Adapter");
 
-        let mut device: Option<ID3D12Device> = None;
-        unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut device) }
-            .expect("Creating D3D device");
-        let device = device.expect("Creating D3D device");
+        let device: ComPtr<d3d12::ID3D12Device> = resolve_interface(|iid, ptr| unsafe {
+            d3d12::D3D12CreateDevice(
+                adapter.as_raw() as _,
+                d3dcommon::D3D_FEATURE_LEVEL_11_0,
+                iid,
+                ptr,
+            )
+        })
+        .expect_ok("Creating D3D device");
 
-        let queue = unsafe {
-            device.CreateCommandQueue::<ID3D12CommandQueue>(&D3D12_COMMAND_QUEUE_DESC {
-                Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
-                Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
-                ..Default::default()
-            })
-        }
-        .expect("Creating command queue");
+        let queue: ComPtr<d3d12::ID3D12CommandQueue> = {
+            let desc = d3d12::D3D12_COMMAND_QUEUE_DESC {
+                Type: d3d12::D3D12_COMMAND_LIST_TYPE_DIRECT,
+                Priority: d3d12::D3D12_COMMAND_QUEUE_PRIORITY_NORMAL as _,
+                Flags: d3d12::D3D12_COMMAND_QUEUE_FLAG_NONE,
+                NodeMask: 0,
+            };
+
+            resolve_interface(|iid, ptr| unsafe { device.CreateCommandQueue(&desc, iid, ptr) })
+                .expect_ok("Creating command queue")
+        };
 
         let backend_context = d3d::BackendContext {
             adapter,
@@ -63,7 +71,7 @@ impl DrawingDriver for D3D {
         (width, height): (i32, i32),
         path: &Path,
         name: &str,
-        func: impl Fn(&Canvas),
+        func: impl Fn(&mut Canvas),
     ) {
         let image_info = ImageInfo::new_n32_premul((width * 2, height * 2), None);
         let mut surface = gpu::surfaces::render_target(
@@ -74,46 +82,50 @@ impl DrawingDriver for D3D {
             gpu::SurfaceOrigin::BottomLeft,
             None,
             false,
-            None,
         )
         .unwrap();
 
         artifact::draw_image_on_surface(&mut surface, path, name, func);
     }
 
-    fn draw_image_256(&mut self, path: &Path, name: &str, func: impl Fn(&Canvas)) {
+    fn draw_image_256(&mut self, path: &Path, name: &str, func: impl Fn(&mut Canvas)) {
         self.draw_image((256, 256), path, name, func)
     }
 }
 
-fn get_hardware_adapter(factory: &IDXGIFactory4) -> windows::core::Result<IDXGIAdapter1> {
-    for i in 0.. {
-        let adapter = unsafe { factory.EnumAdapters1(i)? };
+fn resolve_interface<T: Interface>(
+    f: impl FnOnce(&GUID, &mut *mut ffi::c_void) -> HRESULT,
+) -> Result<ComPtr<T>, HRESULT> {
+    let mut ptr: *mut ffi::c_void = ptr::null_mut();
+    let r = f(&T::uuidof(), &mut ptr);
+    if r == S_OK {
+        Ok(unsafe { ComPtr::from_raw(ptr as *mut T) })
+    } else {
+        Err(r)
+    }
+}
 
-        let desc = unsafe { adapter.GetDesc1()? };
+fn resolve_specific<T: Interface>(
+    f: impl FnOnce(&mut *mut T) -> HRESULT,
+) -> Result<ComPtr<T>, HRESULT> {
+    let mut ptr: *mut T = ptr::null_mut();
+    let r = f(&mut ptr);
+    if r == S_OK {
+        Ok(unsafe { ComPtr::from_raw(ptr) })
+    } else {
+        Err(r)
+    }
+}
 
-        if (DXGI_ADAPTER_FLAG(desc.Flags as i32) & DXGI_ADAPTER_FLAG_SOFTWARE)
-            != DXGI_ADAPTER_FLAG_NONE
-        {
-            // Don't select the Basic Render Driver adapter. If you want a
-            // software adapter, pass in "/warp" on the command line.
-            continue;
-        }
+trait ExpectOk<T> {
+    fn expect_ok(self, msg: &str) -> T;
+}
 
-        // Check to see whether the adapter supports Direct3D 12, but don't
-        // create the actual device yet.
-        if unsafe {
-            D3D12CreateDevice(
-                &adapter,
-                D3D_FEATURE_LEVEL_11_0,
-                std::ptr::null_mut::<Option<ID3D12Device>>(),
-            )
-        }
-        .is_ok()
-        {
-            return Ok(adapter);
+impl<T> ExpectOk<T> for Result<T, HRESULT> {
+    fn expect_ok(self, msg: &str) -> T {
+        match self {
+            Ok(r) => r,
+            Err(hr) => panic!("{msg} failed. {hr:x}"),
         }
     }
-
-    unreachable!()
 }

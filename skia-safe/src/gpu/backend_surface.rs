@@ -1,7 +1,3 @@
-use std::fmt;
-
-use skia_bindings::{self as sb, GrBackendFormat, GrBackendRenderTarget, GrBackendTexture};
-
 #[cfg(feature = "d3d")]
 use super::d3d;
 #[cfg(feature = "gl")]
@@ -12,6 +8,10 @@ use super::mtl;
 use super::vk;
 use super::{BackendAPI, Mipmapped, MutableTextureState};
 use crate::{interop::AsStr, prelude::*, ISize};
+use skia_bindings::{
+    self as sb, GrBackendFormat, GrBackendRenderTarget, GrBackendTexture, GrMipmapped,
+};
+use std::fmt;
 
 pub type BackendFormat = Handle<GrBackendFormat>;
 unsafe_send_sync!(BackendFormat);
@@ -60,32 +60,43 @@ impl BackendFormat {
 
     #[cfg(feature = "gl")]
     pub fn new_gl(format: gl::Enum, target: gl::Enum) -> Self {
-        Self::construct(|bf| unsafe { sb::C_GrBackendFormats_ConstructGL(bf, format, target) })
+        Self::construct(|bf| unsafe { sb::C_GrBackendFormat_ConstructGL(bf, format, target) })
             .assert_valid()
     }
 
     #[cfg(feature = "vulkan")]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_formats::make_vk()")]
     pub fn new_vulkan(
         format: vk::Format,
         will_use_drm_format_modifiers: impl Into<Option<bool>>,
     ) -> Self {
-        super::backend_formats::make_vk(format, will_use_drm_format_modifiers)
+        let will_use_drm_format_modifiers = will_use_drm_format_modifiers.into().unwrap_or(false);
+        Self::construct(|bf| unsafe {
+            sb::C_GrBackendFormat_ConstructVk(bf, format, will_use_drm_format_modifiers)
+        })
+        .assert_valid()
     }
 
     #[cfg(feature = "vulkan")]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_formats::make_vk_ycbcr()")]
     pub fn new_vulkan_ycbcr(
         conversion_info: &vk::YcbcrConversionInfo,
         will_use_drm_format_modifiers: impl Into<Option<bool>>,
     ) -> Self {
-        super::backend_formats::make_vk_ycbcr(conversion_info, will_use_drm_format_modifiers)
+        let will_use_drm_format_modifiers = will_use_drm_format_modifiers.into().unwrap_or(false);
+        Self::construct(|bf| unsafe {
+            sb::C_GrBackendFormat_ConstructVk2(
+                bf,
+                conversion_info.native(),
+                will_use_drm_format_modifiers,
+            )
+        })
+        .assert_valid()
     }
 
     #[cfg(feature = "metal")]
-    #[deprecated(since = "0.74.0", note = "use gpu::backend_formats::make_mtl()")]
+    #[allow(clippy::missing_safety_doc)]
     pub fn new_metal(format: mtl::PixelFormat) -> Self {
-        super::backend_formats::make_mtl(format)
+        Self::construct(|bf| unsafe { sb::C_GrBackendFormat_ConstructMtl(bf, format) })
+            .assert_valid()
     }
 
     #[cfg(feature = "d3d")]
@@ -104,27 +115,27 @@ impl BackendFormat {
         unsafe { self.native().channelMask() }
     }
 
-    // m117: Even though Skia did, we won't deprecate these functions here for convenience.
-
     #[cfg(feature = "gl")]
     pub fn as_gl_format(&self) -> gl::Format {
-        super::backend_formats::as_gl_format(self)
+        unsafe { self.native().asGLFormat() }
     }
 
     #[cfg(feature = "gl")]
     pub fn as_gl_format_enum(&self) -> gl::Enum {
-        super::backend_formats::as_gl_format_enum(self)
+        unsafe { self.native().asGLFormatEnum() }
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "vulkan")]
     pub fn as_vk_format(&self) -> Option<vk::Format> {
-        super::backend_formats::as_vk_format(self)
+        let mut r = vk::Format::UNDEFINED;
+        unsafe { self.native().asVkFormat(&mut r) }.if_true_some(r)
     }
 
     #[cfg(feature = "metal")]
     pub fn as_mtl_format(&self) -> Option<mtl::PixelFormat> {
-        super::backend_formats::as_mtl_format(self)
+        let pixel_format = unsafe { self.native().asMtlFormat() };
+        // Mtl's PixelFormat == 0 is invalid.
+        (pixel_format != 0).if_true_some(pixel_format)
     }
 
     #[cfg(feature = "d3d")]
@@ -208,66 +219,86 @@ impl BackendTexture {
 
     #[cfg(feature = "gl")]
     #[allow(clippy::missing_safety_doc)]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_textures::make_gl()")]
     pub unsafe fn new_gl(
         (width, height): (i32, i32),
         mipmapped: super::Mipmapped,
         gl_info: gl::TextureInfo,
     ) -> Self {
-        super::backend_textures::make_gl((width, height), mipmapped, gl_info, "")
+        Self::new_gl_with_label((width, height), mipmapped, gl_info, "")
     }
 
     #[cfg(feature = "gl")]
     #[allow(clippy::missing_safety_doc)]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_textures::make_gl()")]
     pub unsafe fn new_gl_with_label(
         (width, height): (i32, i32),
         mipmapped: super::Mipmapped,
         gl_info: gl::TextureInfo,
         label: impl AsRef<str>,
     ) -> Self {
-        super::backend_textures::make_gl((width, height), mipmapped, gl_info, label)
+        let str = label.as_ref().as_bytes();
+        Self::from_ptr(sb::C_GrBackendTexture_newGL(
+            width,
+            height,
+            mipmapped,
+            gl_info.native(),
+            str.as_ptr() as _,
+            str.len(),
+        ))
+        .unwrap()
     }
 
     #[cfg(feature = "vulkan")]
     #[allow(clippy::missing_safety_doc)]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_textures::make_vk()")]
     pub unsafe fn new_vulkan((width, height): (i32, i32), vk_info: &vk::ImageInfo) -> Self {
-        super::backend_textures::make_vk((width, height), vk_info, "")
+        Self::new_vulkan_with_label((width, height), vk_info, "")
     }
 
     #[cfg(feature = "vulkan")]
     #[allow(clippy::missing_safety_doc)]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_textures::make_vk()")]
     pub unsafe fn new_vulkan_with_label(
         (width, height): (i32, i32),
         vk_info: &vk::ImageInfo,
         label: impl AsRef<str>,
     ) -> Self {
-        super::backend_textures::make_vk((width, height), vk_info, label)
+        let label = label.as_ref().as_bytes();
+        Self::from_native_if_valid(sb::C_GrBackendTexture_newVk(
+            width,
+            height,
+            vk_info.native(),
+            label.as_ptr() as _,
+            label.len(),
+        ))
+        .unwrap()
     }
 
     #[cfg(feature = "metal")]
     #[allow(clippy::missing_safety_doc)]
-    #[deprecated(since = "0.74.0", note = "use gpu::backend_textures::make_mtl()")]
     pub unsafe fn new_metal(
         (width, height): (i32, i32),
         mipmapped: super::Mipmapped,
         mtl_info: &mtl::TextureInfo,
     ) -> Self {
-        super::backend_textures::make_mtl((width, height), mipmapped, mtl_info, "")
+        Self::new_metal_with_label((width, height), mipmapped, mtl_info, "")
     }
 
     #[cfg(feature = "metal")]
     #[allow(clippy::missing_safety_doc)]
-    #[deprecated(since = "0.74.0", note = "use gpu::backend_textures::make_mtl()")]
     pub unsafe fn new_metal_with_label(
         (width, height): (i32, i32),
         mipmapped: super::Mipmapped,
         mtl_info: &mtl::TextureInfo,
         label: impl AsRef<str>,
     ) -> Self {
-        super::backend_textures::make_mtl((width, height), mipmapped, mtl_info, label)
+        let label = label.as_ref().as_bytes();
+        Self::from_native_if_valid(sb::C_GrBackendTexture_newMtl(
+            width,
+            height,
+            mipmapped,
+            mtl_info.native(),
+            label.as_ptr() as _,
+            label.len(),
+        ))
+        .unwrap()
     }
 
     #[cfg(feature = "d3d")]
@@ -327,40 +358,53 @@ impl BackendTexture {
     }
 
     pub fn has_mipmaps(&self) -> bool {
-        self.native().fMipmapped == Mipmapped::Yes
+        self.native().fMipmapped == GrMipmapped::Yes
     }
 
     pub fn backend(&self) -> BackendAPI {
         self.native().fBackend
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "gl")]
     pub fn gl_texture_info(&self) -> Option<gl::TextureInfo> {
-        super::backend_textures::get_gl_texture_info(self)
+        unsafe {
+            let mut texture_info = gl::TextureInfo::default();
+            self.native()
+                .getGLTextureInfo(texture_info.native_mut())
+                .if_true_some(texture_info)
+        }
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "gl")]
     pub fn gl_texture_parameters_modified(&mut self) {
-        super::backend_textures::gl_texture_parameters_modified(self)
+        unsafe { self.native_mut().glTextureParametersModified() }
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "vulkan")]
     pub fn vulkan_image_info(&self) -> Option<vk::ImageInfo> {
-        super::backend_textures::get_vk_image_info(self)
+        unsafe {
+            // constructor not available.
+            let mut image_info = vk::ImageInfo::default();
+            self.native()
+                .getVkImageInfo(image_info.native_mut())
+                .if_true_some(image_info)
+        }
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "vulkan")]
     pub fn set_vulkan_image_layout(&mut self, layout: vk::ImageLayout) -> &mut Self {
-        super::backend_textures::set_vk_image_layout(self, layout)
+        unsafe { self.native_mut().setVkImageLayout(layout) }
+        self
     }
 
     #[cfg(feature = "metal")]
     pub fn metal_texture_info(&self) -> Option<mtl::TextureInfo> {
-        super::backend_textures::get_mtl_texture_info(self)
+        unsafe {
+            let mut texture_info = mtl::TextureInfo::default();
+            self.native()
+                .getMtlTextureInfo(texture_info.native_mut())
+                .if_true_some(texture_info)
+        }
     }
 
     #[cfg(feature = "d3d")]
@@ -456,26 +500,56 @@ impl fmt::Debug for BackendRenderTarget {
 
 impl BackendRenderTarget {
     #[cfg(feature = "gl")]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_render_targets::make_gl()")]
     pub fn new_gl(
         (width, height): (i32, i32),
         sample_count: impl Into<Option<usize>>,
         stencil_bits: usize,
         info: gl::FramebufferInfo,
     ) -> Self {
-        super::backend_render_targets::make_gl((width, height), sample_count, stencil_bits, info)
+        Self::construct(|target| unsafe {
+            sb::C_GrBackendRenderTarget_ConstructGL(
+                target,
+                width,
+                height,
+                sample_count.into().unwrap_or(0).try_into().unwrap(),
+                stencil_bits.try_into().unwrap(),
+                info.native(),
+            )
+        })
     }
 
     #[cfg(feature = "vulkan")]
-    #[deprecated(since = "0.67.0", note = "use gpu::backend_render_targets::make_vk()")]
-    pub fn new_vulkan((width, height): (i32, i32), info: &vk::ImageInfo) -> Self {
-        super::backend_render_targets::make_vk((width, height), info)
+    pub fn new_vulkan(
+        (width, height): (i32, i32),
+        sample_count: impl Into<Option<usize>>,
+        info: &vk::ImageInfo,
+    ) -> Self {
+        Self::construct(|target| unsafe {
+            sb::C_GrBackendRenderTarget_ConstructVk(
+                target,
+                width,
+                height,
+                sample_count.into().unwrap_or(0).try_into().unwrap(),
+                info.native(),
+            )
+        })
     }
 
     #[cfg(feature = "metal")]
-    #[deprecated(since = "0.74.0", note = "use gpu::backend_render_targets::make_mtl()")]
-    pub fn new_metal((width, height): (i32, i32), mtl_info: &mtl::TextureInfo) -> Self {
-        super::backend_render_targets::make_mtl((width, height), mtl_info)
+    pub fn new_metal(
+        (width, height): (i32, i32),
+        sample_cnt: i32,
+        mtl_info: &mtl::TextureInfo,
+    ) -> Self {
+        Self::construct(|target| unsafe {
+            sb::C_GrBackendRenderTarget_ConstructMtl(
+                target,
+                width,
+                height,
+                sample_cnt,
+                mtl_info.native(),
+            )
+        })
     }
 
     #[cfg(feature = "d3d")]
@@ -520,27 +594,28 @@ impl BackendRenderTarget {
         self.native().fFramebufferOnly
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "gl")]
     pub fn gl_framebuffer_info(&self) -> Option<gl::FramebufferInfo> {
-        super::backend_render_targets::get_gl_framebuffer_info(self)
+        let mut info = gl::FramebufferInfo::default();
+        unsafe { self.native().getGLFramebufferInfo(info.native_mut()) }.if_true_some(info)
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "vulkan")]
     pub fn vulkan_image_info(&self) -> Option<vk::ImageInfo> {
-        super::backend_render_targets::get_vk_image_info(self)
+        let mut info = vk::ImageInfo::default();
+        unsafe { self.native().getVkImageInfo(info.native_mut()) }.if_true_some(info)
     }
 
-    // Deprecated in Skia
     #[cfg(feature = "vulkan")]
     pub fn set_vulkan_image_layout(&mut self, layout: vk::ImageLayout) -> &mut Self {
-        super::backend_render_targets::set_vk_image_layout(self, layout)
+        unsafe { self.native_mut().setVkImageLayout(layout) }
+        self
     }
 
     #[cfg(feature = "metal")]
     pub fn metal_texture_info(&self) -> Option<mtl::TextureInfo> {
-        super::backend_render_targets::get_mtl_texture_info(self)
+        let mut info = mtl::TextureInfo::default();
+        unsafe { self.native().getMtlTextureInfo(info.native_mut()) }.if_true_some(info)
     }
 
     #[cfg(feature = "d3d")]
@@ -572,10 +647,7 @@ impl BackendRenderTarget {
         unsafe { self.native().isProtected() }
     }
 
-    #[deprecated(
-        since = "0.37.0",
-        note = "Exposed BackendRenderTargets are always valid."
-    )]
+    #[deprecated(since = "0.37.0", note = "BackendRenderTargets must be valid.")]
     pub fn is_valid(&self) -> bool {
         self.native().fIsValid
     }

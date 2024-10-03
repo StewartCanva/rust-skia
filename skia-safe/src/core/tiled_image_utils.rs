@@ -3,7 +3,7 @@ use skia_bindings::{self as sb, C_SkTiledImageUtils_DrawImageRect};
 use crate::{canvas, prelude::*, scalar, Canvas, Image, Paint, Point, Rect, SamplingOptions};
 
 pub fn draw_image_rect(
-    canvas: &Canvas,
+    canvas: &mut Canvas,
     image: &Image,
     src: impl AsRef<Rect>,
     dst: impl AsRef<Rect>,
@@ -27,7 +27,7 @@ pub fn draw_image_rect(
 }
 
 pub fn draw_image(
-    canvas: &Canvas,
+    canvas: &mut Canvas,
     image: &Image,
     xy: impl Into<Point>,
     sampling: Option<SamplingOptions>,
@@ -41,7 +41,7 @@ pub fn draw_image(
     draw_image_rect(canvas, image, src, dst, sampling, paint, constraint)
 }
 
-pub const NUM_IMAGE_KEY_VALUES: usize = 6;
+pub const NUM_IMAGE_KEY_VALUES: usize = 5;
 
 pub fn get_image_key_values(image: &Image) -> [u32; NUM_IMAGE_KEY_VALUES] {
     let mut key_values = [0u32; NUM_IMAGE_KEY_VALUES];

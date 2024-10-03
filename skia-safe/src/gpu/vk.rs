@@ -1,16 +1,12 @@
-use std::{ops::Deref, ptr};
-
 use skia_bindings as sb;
+use std::ops::Deref;
+use std::ptr;
 
-mod vk_types;
-mod vulkan_backend_context;
-mod vulkan_mutable_texture_state;
-mod vulkan_types;
+mod backend_context;
+pub use backend_context::*;
 
-pub use vk_types::*;
-pub use vulkan_backend_context::*;
-pub use vulkan_mutable_texture_state::*;
-pub use vulkan_types::*;
+mod types;
+pub use types::*;
 
 //
 // Additional Vulkan re-exports and definitions.
@@ -20,8 +16,6 @@ pub use sb::VkBool32 as Bool32;
 pub use sb::VkBuffer as Buffer;
 pub use sb::VkChromaLocation as ChromaLocation;
 pub use sb::VkCommandBuffer as CommandBuffer;
-pub use sb::VkComponentMapping as ComponentMapping;
-pub use sb::VkComponentSwizzle as ComponentSwizzle;
 pub use sb::VkDevice as Device;
 pub use sb::VkDeviceMemory as DeviceMemory;
 pub use sb::VkDeviceSize as DeviceSize;

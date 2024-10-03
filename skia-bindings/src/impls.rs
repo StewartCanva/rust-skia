@@ -1,14 +1,12 @@
-//! This file contains implementations for types that are re-exported in skia-safe.
+//! This file contains implementations for types that are
+//! re-exported in skia-safe.
 //!
 //! We could provide trait implementations in skia-safe, but then users of the library would have to
 //! import the implementation type _and_ the trait.
 //!
 //! See also: <https://github.com/rust-lang/rfcs/issues/1880>
 
-use crate::{
-    SkAlphaType, SkBlendMode, SkBlendModeCoeff, SkPathFillType, SkPathVerb, SkPath_Verb,
-    SkYUVColorSpace,
-};
+use crate::{SkAlphaType, SkBlendMode, SkBlendModeCoeff, SkPathFillType, SkPathVerb, SkPath_Verb};
 use std::ffi::CStr;
 
 impl SkBlendMode {
@@ -101,12 +99,6 @@ impl SkAlphaType {
     }
 }
 
-impl SkYUVColorSpace {
-    pub fn is_limited_range(self) -> bool {
-        unsafe { crate::SkYUVColorSpaceIsLimitedRange(self) }
-    }
-}
-
 #[cfg(feature = "gl")]
 impl From<crate::GrGLenum> for crate::GrGLFormat {
     fn from(e: crate::GrGLenum) -> Self {
@@ -119,17 +111,6 @@ impl From<crate::GrGLFormat> for crate::GrGLenum {
     fn from(format: crate::GrGLFormat) -> Self {
         unsafe { crate::C_GrGLFormatToEnum(format) }
     }
-}
-
-#[cfg(feature = "vulkan")]
-mod vulkan {
-    impl PartialEq for crate::VkComponentMapping {
-        fn eq(&self, other: &Self) -> bool {
-            self.r == other.r && self.g == other.g && self.b == other.b && self.a == other.a
-        }
-    }
-
-    impl Eq for crate::VkComponentMapping {}
 }
 
 #[cfg(feature = "d3d")]

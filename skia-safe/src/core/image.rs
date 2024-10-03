@@ -22,8 +22,8 @@ pub mod images {
     #[allow(unused)] // doc only
     use crate::ColorType;
     use crate::{
-        prelude::*, AlphaType, Bitmap, ColorSpace, Data, IPoint, IRect, ISize, Image, ImageFilter,
-        ImageGenerator, ImageInfo, Matrix, Paint, Picture, SurfaceProps, TextureCompressionType,
+        prelude::*, AlphaType, Bitmap, ColorSpace, Data, ISize, Image, ImageGenerator, ImageInfo,
+        Matrix, Paint, Picture, SurfaceProps, TextureCompressionType,
     };
 
     /// Creates a CPU-backed [`Image`] from `bitmap`, sharing or copying `bitmap` pixels. If the bitmap
@@ -38,7 +38,6 @@ pub mod images {
     /// pixel address is not `None`.
     ///
     /// * `bitmap` - [`ImageInfo`], row bytes, and pixels
-    ///
     /// Returns: created [`Image`], or `None`
 
     pub fn raster_from_bitmap(bitmap: &Bitmap) -> Option<Image> {
@@ -53,7 +52,6 @@ pub mod images {
     /// * `data` - compressed data to store in [`Image`]
     /// * `dimension` - width and height of full [`Image`]
     /// * `ty` - type of compression used
-    ///
     /// Returns: created [`Image`], or `None`
     pub fn raster_from_compressed_texture_data(
         data: impl Into<Data>,
@@ -84,7 +82,6 @@ pub mod images {
     /// If the encoded format is not supported, `None` is returned.
     ///
     /// * `encoded` - the encoded data
-    ///
     /// Returns: created [`Image`], or `None`
     ///
     /// example: <https://fiddle.skia.org/c/@Image_DeferredFromEncodedData>
@@ -113,7 +110,6 @@ pub mod images {
     /// `image_generator` may wrap [`Picture`] data, codec data, or custom data.
     ///
     /// * `image_generator` - stock or custom routines to retrieve [`Image`]
-    ///
     /// Returns: created [`Image`], or `None`
     pub fn deferred_from_generator(mut image_generator: ImageGenerator) -> Option<Image> {
         let image = Image::from_ptr(unsafe {
@@ -141,7 +137,6 @@ pub mod images {
     /// * `bit_depth` - 8-bit integer or 16-bit float: per component
     /// * `color_space` - range of colors; may be `None`
     /// * `props` - props to use when rasterizing the picture
-    ///
     /// Returns: created [`Image`], or `None`
     pub fn deferred_from_picture(
         picture: impl Into<Picture>,
@@ -181,7 +176,6 @@ pub mod images {
     /// * `info` - contains width, height, [`AlphaType`], [`ColorType`], [`ColorSpace`]
     /// * `pixels` - address or pixel storage
     /// * `row_bytes` - size of pixel row or larger
-    ///
     /// Returns: [`Image`] sharing pixels, or `None`
     pub fn raster_from_data(
         info: &ImageInfo,
@@ -191,50 +185,6 @@ pub mod images {
         Image::from_ptr(unsafe {
             sb::C_SkImages_RasterFromData(info.native(), pixels.into().into_ptr(), row_bytes)
         })
-    }
-
-    /// Creates a filtered [`Image`] on the CPU. filter processes the src image, potentially
-    /// changing the color, position, and size. subset is the bounds of src that are processed by
-    /// filter. `clip_bounds` is the expected bounds of the filtered [`Image`]. `out_subset` is
-    /// required storage for the actual bounds of the filtered [`Image`]. `offset` is required
-    /// storage for translation of returned [`Image`].
-    ///
-    /// Returns `None` a filtered result could not be created.
-    ///
-    /// Useful for animation of [`ImageFilter`] that varies size from frame to frame. `out_subset`
-    /// describes the valid bounds of returned image. offset translates the returned [`Image`] to
-    /// keep subsequent animation frames aligned with respect to each other.
-    ///
-    /// * `src` - the image to be filtered
-    /// * `filter` - the image filter to be applied
-    /// * `subset` - bounds of [`Image`] processed by filter
-    /// * `clip_bounds` - expected bounds of filtered [`Image`]
-    ///
-    /// Returns filtered SkImage, or `None`:
-    /// * `out_subset` - storage for returned [`Image`] bounds
-    /// * `offset` - storage for returned [`Image`] translation Returns: filtered [`Image`], or
-    ///   `None`
-    pub fn make_with_filter(
-        image: impl Into<Image>,
-        image_filter: &ImageFilter,
-        subset: impl AsRef<IRect>,
-        clip_bounds: impl AsRef<IRect>,
-    ) -> Option<(Image, IRect, IPoint)> {
-        let mut out_subset = IRect::default();
-        let mut offset = IPoint::default();
-
-        unsafe {
-            Image::from_ptr(sb::C_SkImages_MakeWithFilter(
-                image.into().into_ptr(),
-                image_filter.native(),
-                subset.as_ref().native(),
-                clip_bounds.as_ref().native(),
-                out_subset.native_mut(),
-                offset.native_mut(),
-            ))
-        }
-        .map(|i| (i, out_subset, offset));
-        None
     }
 }
 
@@ -306,7 +256,6 @@ impl Image {
     /// - `info`       contains width, height, [`AlphaType`], [`ColorType`], [`ColorSpace`]
     /// - `pixels`     address or pixel storage
     /// - `rowBytes`   size of pixel row or larger
-    ///
     /// Returns: [`Image`] sharing pixels, or `None`
     #[deprecated(since = "0.63.0", note = "use images::raster_from_data()")]
     pub fn from_raster_data(
@@ -329,7 +278,6 @@ impl Image {
     /// pixel address is not `null`.
     ///
     /// - `bitmap`   [`ImageInfo`], row bytes, and pixels
-    ///
     /// Returns: created [`Image`], or `None`
     ///
     /// example: <https://fiddle.skia.org/c/@Image_MakeFromBitmap>
@@ -347,7 +295,6 @@ impl Image {
     /// imageGenerator may wrap [`Picture`] data, codec data, or custom data.
     ///
     /// - `image_generator`   stock or custom routines to retrieve [`Image`]
-    ///
     /// Returns: created [`Image`], or `None`
     #[deprecated(since = "0.63.0", note = "use images::deferred_from_generator()")]
     pub fn from_generator(image_generator: ImageGenerator) -> Option<Image> {
@@ -376,7 +323,6 @@ impl Image {
     /// If the encoded format is not supported, `None` is returned.
     ///
     /// - `encoded`   the encoded data
-    ///
     /// Returns: created [`Image`], or `None`
     ///
     /// example: <https://fiddle.skia.org/c/@Image_MakeFromEncoded>
@@ -401,7 +347,6 @@ impl Image {
     /// - `width`     width of full [`Image`]
     /// - `height`    height of full [`Image`]
     /// - `ty`        type of compression used
-    ///
     /// Returns: created [`Image`], or `None`
     #[deprecated(
         since = "0.63.0",
@@ -449,7 +394,6 @@ impl Image {
     /// - `bitDepth`     8-bit integer or 16-bit float: per component
     /// - `color_space`  range of colors; may be `None`
     /// - `props`        props to use when rasterizing the picture
-    ///
     /// Returns: created [`Image`], or `None`
     #[deprecated(since = "0.63.0", note = "use images::deferred_from_picture()")]
     pub fn from_picture_with_props(
@@ -488,7 +432,6 @@ impl Image {
     /// - `ty`           type of compression used
     /// - `mipmapped`    does 'data' contain data for all the mipmap levels?
     /// - `is_protected`  do the contents of 'data' require DRM protection (on Vulkan)?
-    ///
     /// Returns: created [`Image`], or `None`
     #[cfg(feature = "gpu")]
     #[deprecated(
@@ -548,7 +491,6 @@ impl Image {
     ///                           well (e.g., [`ColorSpace::MakeSRGB`]()).
     /// * `texture_release_proc`  Function called when texture can be released
     /// * `release_context`       State passed to `texture_release_proc`
-    ///
     /// Returns: Created [`Image`], or `None`
     #[cfg(feature = "gpu")]
     pub fn from_texture(
@@ -606,7 +548,6 @@ impl Image {
     /// - `pixmap`                  [`ImageInfo`], pixel address, and row bytes
     /// - `build_mips`               create [`Image`] as mip map if `true`
     /// - `limit_to_max_texture_size`   downscale image to GPU maximum texture size, if necessary
-    ///
     /// Returns: created [`Image`], or `None`
     #[cfg(feature = "gpu")]
     #[deprecated(
@@ -639,7 +580,6 @@ impl Image {
     /// - `color_type`        color type of the resulting image
     /// - `alpha_type`        alpha type of the resulting image
     /// - `color_space`       range of colors; may be `None`
-    ///
     /// Returns: created [`Image`], or `None`
     #[cfg(feature = "gpu")]
     #[deprecated(since = "0.63.0", note = "use gpu::images::adopt_texture_from()")]
@@ -673,7 +613,6 @@ impl Image {
     ///                           may be `None`
     /// - `texture_release_proc`  called when the backend textures can be released
     /// - `release_context`      state passed to `texture_release_proc`
-    ///
     /// Returns: created [`Image`], or `None`
     #[cfg(feature = "gpu")]
     #[deprecated(
@@ -709,7 +648,6 @@ impl Image {
     ///                               silently ignored if the context does not support mip maps.
     /// - `limit_to_max_texture_size`   downscale image to GPU maximum texture size, if necessary
     /// - `image_color_space`         range of colors of the resulting image; may be `None`
-    ///
     /// Returns: created [`Image`], or `None`
     #[cfg(feature = "gpu")]
     #[deprecated(
@@ -905,7 +843,6 @@ impl Image {
     /// `false` and leave pixmap unchanged.
     ///
     /// - `pixmap`   storage for pixel state if pixels are readable; otherwise, ignored
-    ///
     /// Returns: `true` if [`Image`] has direct access to pixels
     ///
     /// example: <https://fiddle.skia.org/c/@Image_peekPixels>
@@ -939,30 +876,12 @@ impl Image {
     /// GPU surface or both.
     ///
     /// - `context`   GPU context
-    ///
     /// Returns: `true` if [`Image`] can be drawn
     ///
     /// example: <https://fiddle.skia.org/c/@Image_isValid>
     #[cfg(feature = "gpu")]
     pub fn is_valid(&self, context: &mut gpu::RecordingContext) -> bool {
         unsafe { sb::C_SkImage_isValid(self.native(), context.native_mut()) }
-    }
-
-    /// Create a new image by copying this image and scaling to fit the [`ImageInfo`]'s dimensions
-    /// and converting the pixels into the ImageInfo's [`crate::ColorInfo`].
-    ///
-    /// This is done retaining the domain (backend) of the image (e.g. gpu, raster).
-    ///
-    /// Returns `None` if the requested [`crate::ColorInfo`] is not supported, its dimesions are out
-    /// of range.
-    pub fn make_scaled(
-        &self,
-        info: &ImageInfo,
-        scaling: impl Into<SamplingOptions>,
-    ) -> Option<Image> {
-        Image::from_ptr(unsafe {
-            sb::C_SkImage_makeScaled(self.native(), info.native(), scaling.into().native())
-        })
     }
 
     /// See [`Self::flush_with_info()`]
@@ -1011,7 +930,6 @@ impl Image {
     /// If origin in not `None`, copies location of content drawn into [`Image`].
     ///
     /// - `flush_pending_gr_context_io`   flag to flush outstanding requests
-    ///
     /// Returns: back-end API texture handle; invalid on failure
     #[cfg(feature = "gpu")]
     #[deprecated(
@@ -1027,9 +945,6 @@ impl Image {
 
     /// Copies [`crate::Rect`] of pixels from [`Image`] to `dst_pixels`. Copy starts at offset (`src_x`, `src_y`),
     /// and does not exceed [`Image`] (width(), height()).
-    ///
-    /// Graphite has deprecated this API in favor of the equivalent asynchronous API on
-    /// `skgpu::graphite::Context` (with an optional explicit synchonization).
     ///
     /// `dst_info` specifies width, height, [`ColorType`], [`AlphaType`], and [`ColorSpace`] of
     /// destination. `dst_row_bytes` specifies the gap from one destination row to the next.
@@ -1059,7 +974,6 @@ impl Image {
     /// - `src_x`          column index whose absolute value is less than `width()`
     /// - `src_y`          row index whose absolute value is less than `height()`
     /// - `caching_hint`   whether the pixels should be cached locally
-    ///
     /// Returns: `true` if pixels are copied to `dst_pixels`
     #[cfg(feature = "gpu")]
     pub fn read_pixels_with_context<'a, P>(
@@ -1093,9 +1007,6 @@ impl Image {
     /// Copies a [`crate::Rect`] of pixels from [`Image`] to dst. Copy starts at (`src_x`, `src_y`), and
     /// does not exceed [`Image`] (width(), height()).
     ///
-    /// Graphite has deprecated this API in favor of the equivalent asynchronous API on
-    /// `skgpu::graphite::Context` (with an optional explicit synchonization).
-    ///
     /// dst specifies width, height, [`ColorType`], [`AlphaType`], [`ColorSpace`], pixel storage,
     /// and row bytes of destination. dst.`row_bytes()` specifics the gap from one destination
     /// row to the next. Returns `true` if pixels are copied. Returns `false` if:
@@ -1122,7 +1033,6 @@ impl Image {
     /// - `src_x`          column index whose absolute value is less than `width()`
     /// - `src_y`          row index whose absolute value is less than `height()`
     /// - `caching_hint`   whether the pixels should be cached `locally_z`
-    ///
     /// Returns: `true` if pixels are copied to dst
     #[cfg(feature = "gpu")]
     pub fn read_pixels_to_pixmap_with_context<'a>(
@@ -1215,7 +1125,6 @@ impl Image {
     /// If `caching_hint` is [`CachingHint::Disallow`], pixels are not added to the local cache.
     ///
     /// - `dst`             destination [`Pixmap`]:[`ImageInfo`], pixels, row bytes
-    ///
     /// Returns: `true` if pixels are scaled to fit dst
     #[must_use]
     pub fn scale_pixels(
@@ -1253,7 +1162,6 @@ impl Image {
     ///  * `encoded_image_format` - one of: [`EncodedImageFormat::JPEG`], [`EncodedImageFormat::PNG`],
     ///                             [`EncodedImageFormat::WEBP`]
     ///  * `quality` - encoder specific metric with 100 equaling best
-    ///
     ///  Returns: encoded [`Image`], or `None`
     ///
     ///  example: <https://fiddle.skia.org/c/@Image_encodeToData>
@@ -1297,7 +1205,6 @@ impl Image {
     /// - `encoded_image_format`   one of: [`EncodedImageFormat::JPEG`], [`EncodedImageFormat::PNG`],
     ///                            [`EncodedImageFormat::WEBP`]
     /// - `quality`              encoder specific metric with 100 equaling best
-    ///
     /// Returns: encoded [`Image`], or `None`
     ///
     /// example: <https://fiddle.skia.org/c/@Image_encodeToData>
@@ -1345,7 +1252,6 @@ impl Image {
     ///
     /// - `subset`   bounds of returned [`Image`]
     /// - `context`  the [`gpu::DirectContext`] in play, if it exists
-    ///
     /// Returns: the subsetted image, or `None`
     ///
     /// example: <https://fiddle.skia.org/c/@Image_makeSubset>
@@ -1429,7 +1335,6 @@ impl Image {
     /// - `mipmapped`      whether created [`Image`] texture must allocate mip map levels
     /// - `budgeted`       whether to count a newly created texture for the returned image
     ///                     counts against the context's budget.
-    ///
     /// Returns: created [`Image`], or `None`
     #[cfg(feature = "gpu")]
     pub fn new_texture_image_budgeted(
@@ -1547,17 +1452,29 @@ impl Image {
     /// - `clip_bounds`   expected bounds of filtered [`Image`]
     /// - `out_subset`    storage for returned [`Image`] bounds
     /// - `offset`       storage for returned [`Image`] translation
-    ///
     /// Returns: filtered [`Image`], or `None`
-    #[deprecated(since = "0.67.0", note = "use images::make_with_filter()")]
     pub fn new_with_filter(
         &self,
-        _context: Option<&mut gpu::RecordingContext>,
+        mut context: Option<&mut gpu::RecordingContext>,
         filter: &ImageFilter,
         clip_bounds: impl Into<IRect>,
         subset: impl Into<IRect>,
     ) -> Option<(Image, IRect, IPoint)> {
-        images::make_with_filter(self, filter, subset.into(), clip_bounds.into())
+        let mut out_subset = IRect::default();
+        let mut offset = IPoint::default();
+
+        Image::from_ptr(unsafe {
+            sb::C_SkImage_makeWithFilter(
+                self.native(),
+                context.native_ptr_or_null_mut(),
+                filter.native(),
+                subset.into().native(),
+                clip_bounds.into().native(),
+                out_subset.native_mut(),
+                offset.native_mut(),
+            )
+        })
+        .map(|image| (image, out_subset, offset))
     }
 
     // TODO: MakeBackendTextureFromSkImage()
@@ -1591,7 +1508,6 @@ impl Image {
     ///
     /// - `target`   [`ColorSpace`] describing color range of returned [`Image`]
     /// - `direct`   The [`gpu::DirectContext`] in play, if it exists
-    ///
     /// Returns: created [`Image`] in target [`ColorSpace`]
     ///
     /// example: <https://fiddle.skia.org/c/@Image_makeColorSpace>
@@ -1616,7 +1532,6 @@ impl Image {
     ///
     /// - `direct`   The [`gpu::DirectContext`] in play, if it exists
     /// - `target`   [`ColorSpace`] describing color range of returned [`Image`]
-    ///
     /// Returns: created [`Image`] in target [`ColorSpace`]
     ///
     /// example: <https://fiddle.skia.org/c/@Image_makeColorSpace>

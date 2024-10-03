@@ -1,37 +1,26 @@
+use crate::{prelude::*, Canvas, Font, Paint, Path, Point, TextEncoding};
+use core::borrow::BorrowMut;
 use skia_bindings::SkTextUtils;
-
-use crate::{prelude::*, Canvas, EncodedText, Font, Paint, Path, Point};
 
 pub use skia_bindings::SkTextUtils_Align as Align;
 variant_name!(Align::Center);
 
 pub fn draw_str(
-    canvas: &Canvas,
+    canvas: &mut Canvas,
     text: impl AsRef<str>,
     p: impl Into<Point>,
     font: &Font,
     paint: &Paint,
     align: Align,
 ) {
-    draw_text(canvas, text.as_ref(), p, font, paint, align)
-}
-
-pub fn draw_text(
-    canvas: &Canvas,
-    text: impl EncodedText,
-    p: impl Into<Point>,
-    font: &Font,
-    paint: &Paint,
-    align: Align,
-) {
-    let (ptr, size, encoding) = text.as_raw();
+    let text = text.as_ref().as_bytes();
     let p = p.into();
     unsafe {
         SkTextUtils::Draw(
             canvas.native_mut(),
-            ptr,
-            size,
-            encoding.into_native(),
+            text.as_ptr() as _,
+            text.len(),
+            TextEncoding::UTF8.into_native(),
             p.x,
             p.y,
             font.native(),
@@ -43,38 +32,27 @@ pub fn draw_text(
 
 impl Canvas {
     pub fn draw_str_align(
-        &self,
+        &mut self,
         text: impl AsRef<str>,
         p: impl Into<Point>,
         font: &Font,
         paint: &Paint,
         align: Align,
-    ) -> &Self {
-        self.draw_text_align(text.as_ref(), p, font, paint, align)
-    }
-
-    pub fn draw_text_align(
-        &self,
-        text: impl EncodedText,
-        p: impl Into<Point>,
-        font: &Font,
-        paint: &Paint,
-        align: Align,
-    ) -> &Self {
-        draw_text(self, text, p, font, paint, align);
+    ) -> &mut Self {
+        draw_str(self.borrow_mut(), text, p, font, paint, align);
         self
     }
 }
 
-pub fn get_path(text: impl EncodedText, p: impl Into<Point>, font: &Font) -> Path {
-    let (ptr, size, encoding) = text.as_raw();
+pub fn get_path(text: impl AsRef<str>, p: impl Into<Point>, font: &Font) -> Path {
+    let text = text.as_ref().as_bytes();
     let p = p.into();
     let mut path = Path::default();
     unsafe {
         SkTextUtils::GetPath(
-            ptr,
-            size,
-            encoding.into_native(),
+            text.as_ptr() as _,
+            text.len(),
+            TextEncoding::UTF8.into_native(),
             p.x,
             p.y,
             font.native(),
@@ -86,6 +64,6 @@ pub fn get_path(text: impl EncodedText, p: impl Into<Point>, font: &Font) -> Pat
 
 impl Path {
     pub fn from_str(text: impl AsRef<str>, p: impl Into<Point>, font: &Font) -> Self {
-        get_path(text.as_ref(), p, font)
+        get_path(text, p, font)
     }
 }

@@ -1,4 +1,5 @@
 use super::prelude::*;
+use crate::build_support::{cargo, features::Features};
 use regex::Regex;
 use std::{fs::File, io::Read, path::Path};
 
@@ -8,10 +9,6 @@ pub struct Android;
 const API_LEVEL: &str = "26";
 
 impl PlatformDetails for Android {
-    fn uses_freetype(&self, _config: &BuildConfiguration) -> bool {
-        true
-    }
-
     fn gn_args(&self, config: &BuildConfiguration, builder: &mut GnArgsBuilder) {
         // TODO: this may belong into BuildConfiguration
         let (arch, _) = config.target.arch_abi();
@@ -22,6 +19,13 @@ impl PlatformDetails for Android {
             .arg("ndk_api", API_LEVEL)
             .arg("target_cpu", quote(clang::target_arch(arch)))
             .arg("skia_enable_fontmgr_android", yes());
+
+        if !config.features.embed_freetype {
+            builder.arg(
+                "skia_use_system_freetype2",
+                yes_if(builder.use_system_libraries()),
+            );
+        }
 
         let major = ndk_major_version(Path::new(&ndk));
         let mut extra_skia_cflags = extra_skia_cflags();
@@ -48,18 +52,6 @@ impl PlatformDetails for Android {
             .iter()
             .map(|l| l.to_string())
             .collect()
-    }
-
-    fn filter_platform_features(
-        &self,
-        use_system_libraries: bool,
-        mut features: Features,
-    ) -> Features {
-        if !features.embed_freetype {
-            features.embed_freetype = !use_system_libraries;
-        }
-
-        features
     }
 }
 
