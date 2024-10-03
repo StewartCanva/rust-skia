@@ -25,17 +25,14 @@ impl Budgeted {
 
 // TODO: this should be a newtype(bool) I guess with implementations
 //       of From<bool> and Deref?
-pub use skia_bindings::skgpu_Mipmapped as Mipmapped;
+pub use skia_bindings::GrMipmapped as Mipmapped;
 
 // TODO: this should be a newtype(bool) I guess with implementations
 //       of From<bool> and Deref?
-pub use skia_bindings::skgpu_Protected as Protected;
+pub use skia_bindings::GrProtected as Protected;
 variant_name!(Protected::Yes);
 
 // TODO: this should be a newtype(bool) I guess with implementations
 //       of From<bool> and Deref?
-pub use skia_bindings::skgpu_Renderable as Renderable;
+pub use skia_bindings::GrRenderable as Renderable;
 variant_name!(Renderable::No);
-
-pub use skia_bindings::skgpu_Origin as Origin;
-variant_name!(Origin::TopLeft);

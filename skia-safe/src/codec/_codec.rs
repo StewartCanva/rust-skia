@@ -1,17 +1,13 @@
-use std::{
-    ffi::{self, CStr},
-    fmt, io,
-    marker::PhantomData,
-    mem, ptr, result,
-};
+use std::marker::PhantomData;
+use std::{ffi, ffi::CStr, fmt, io, mem, ptr, result};
 
-use skia_bindings::{self as sb, SkCodec, SkCodec_FrameInfo, SkCodec_Options};
+use skia_bindings::{self as sb, SkCodec, SkCodec_FrameInfo, SkCodec_Options, SkStream};
 
 use super::codec_animation;
+use crate::interop::RustStream;
 use crate::{
-    interop::RustStream, prelude::*, yuva_pixmap_info::SupportedDataTypes, AlphaType, Data,
-    EncodedImageFormat, EncodedOrigin, IRect, ISize, Image, ImageInfo, Pixmap, YUVAPixmapInfo,
-    YUVAPixmaps,
+    prelude::*, yuva_pixmap_info::SupportedDataTypes, AlphaType, Data, EncodedImageFormat,
+    EncodedOrigin, IRect, ISize, Image, ImageInfo, Pixmap, YUVAPixmapInfo, YUVAPixmaps,
 };
 
 pub use sb::SkCodec_Result as Result;
@@ -38,8 +34,6 @@ pub struct Options {
     pub frame_index: usize,
     pub prior_frame: Option<usize>,
 }
-
-pub const NO_FRAME: i32 = sb::SkCodec_kNoFrame;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -91,49 +85,11 @@ impl fmt::Debug for Codec<'_> {
 }
 
 impl Codec<'_> {
-    pub fn from_stream<'a, T: io::Read + io::Seek>(
-        stream: &'a mut T,
-        decoders: &[codecs::Decoder],
-        selection_policy: impl Into<Option<SelectionPolicy>>,
-    ) -> result::Result<Codec<'a>, Result> {
-        let stream = RustStream::new_seekable(stream);
-        let mut result = Result::Unimplemented;
-        let codec = unsafe {
-            sb::C_SkCodec_MakeFromStream(
-                // Transfer ownership of the SkStream to the Codec.
-                stream.into_native(),
-                decoders.as_ptr() as _,
-                decoders.len(),
-                &mut result,
-                selection_policy
-                    .into()
-                    .unwrap_or(SelectionPolicy::PreferStillImage),
-            )
-        };
-        if result != Result::Success {
-            return Err(result);
-        }
-        Ok(Codec::from_ptr(codec).expect("Codec is null"))
-    }
-
+    // TODO: wrap MakeFromStream
     // TODO: wrap from_data with SkPngChunkReader
 
-    // TODO: Deprecated in Skia
     pub fn from_data(data: impl Into<Data>) -> Option<Codec<'static>> {
         Self::from_ptr(unsafe { sb::C_SkCodec_MakeFromData(data.into().into_ptr()) })
-    }
-
-    pub fn from_data_with_decoders(
-        data: impl Into<Data>,
-        decoders: &[codecs::Decoder],
-    ) -> Option<Codec<'static>> {
-        Self::from_ptr(unsafe {
-            sb::C_SkCodec_MakeFromData2(
-                data.into().into_ptr(),
-                decoders.as_ptr() as _,
-                decoders.len(),
-            )
-        })
     }
 
     pub fn info(&self) -> ImageInfo {
@@ -171,9 +127,6 @@ impl Codec<'_> {
     pub fn encoded_format(&self) -> EncodedImageFormat {
         unsafe { sb::C_SkCodec_getEncodedFormat(self.native()) }
     }
-
-    // TODO: May wrap `getEncodedData()`. But how? It would return the stream, which is already
-    // mutably borrowed.
 
     pub fn get_pixels_with_options(
         &mut self,
@@ -396,86 +349,27 @@ impl Codec<'_> {
     }
 }
 
-pub mod codecs {
-    use std::{fmt, io, ptr, result, str};
+pub trait Decoder {
+    const ID: &'static str;
+    fn is_format(data: &[u8]) -> bool;
 
-    use skia_bindings::{self as sb, SkCodecs_Decoder};
+    // TODO: decode_data (use std::io::Cursor in the meantime).
 
-    use super::Result;
-    use crate::{interop::RustStream, prelude::*, AlphaType, Codec, Image};
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result>;
+}
 
-    pub type Decoder = Handle<SkCodecs_Decoder>;
-    unsafe_send_sync!(Decoder);
-
-    impl fmt::Debug for Decoder {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("Decoder").field("id", &self.id()).finish()
-        }
+pub(crate) fn decode_stream(
+    stream: &mut impl io::Read,
+    native_decode_fn: unsafe extern "C" fn(
+        stream: *mut SkStream,
+        result: *mut Result,
+    ) -> *mut SkCodec,
+) -> result::Result<Codec, Result> {
+    let stream = RustStream::new(stream);
+    let mut result = Result::Unimplemented;
+    let codec = unsafe { native_decode_fn(stream.into_native(), &mut result) };
+    if result == Result::Success {
+        return Ok(Codec::from_ptr(codec).expect("codec"));
     }
-
-    impl NativeDrop for SkCodecs_Decoder {
-        fn drop(&mut self) {
-            unsafe { sb::C_SkCodecs_Decoder_destruct(self) }
-        }
-    }
-
-    impl NativeClone for SkCodecs_Decoder {
-        fn clone(&self) -> Self {
-            construct(|d| unsafe { sb::C_SkCodecs_Decoder_CopyConstruct(d, self) })
-        }
-    }
-
-    impl Decoder {
-        pub fn id(&self) -> &'static str {
-            let mut len: usize = 0;
-            let ptr = unsafe { sb::C_SkCodecs_Decoder_getId(self.native(), &mut len) };
-            let chars = unsafe { safer::from_raw_parts(ptr as _, len) };
-            str::from_utf8(chars).expect("Invalid UTF-8 decoder id")
-        }
-
-        pub fn is_format(&self, data: &[u8]) -> bool {
-            unsafe {
-                (self.native().isFormat.expect("Decoder::isFormat is null"))(
-                    data.as_ptr() as _,
-                    data.len(),
-                )
-            }
-        }
-
-        pub fn from_stream<'a>(
-            &self,
-            stream: &'a mut impl io::Read,
-        ) -> result::Result<Codec<'a>, Result> {
-            let stream = RustStream::new(stream);
-            let mut result = Result::Unimplemented;
-            let codec = unsafe {
-                sb::C_SkCodecs_Decoder_MakeFromStream(
-                    self.native(),
-                    // Transfer ownership of the SkStream to the Codec.
-                    stream.into_native(),
-                    &mut result,
-                    ptr::null_mut(),
-                )
-            };
-            if result != Result::Success {
-                return Err(result);
-            }
-            Ok(Codec::from_ptr(codec).expect("Codec is null"))
-        }
-    }
-
-    // TODO: wrap Register()
-
-    pub fn deferred_image(
-        codec: Codec<'_>,
-        alpha_type: impl Into<Option<AlphaType>>,
-    ) -> Option<Borrows<'_, Image>> {
-        let alpha_type: Option<AlphaType> = alpha_type.into();
-        // Even though codec is getting consumed / moved here, we need to preserve the borrow of the
-        // input stream.
-        Image::from_ptr(unsafe {
-            sb::C_SkCodecs_DeferredImage(codec.inner.into_ptr(), alpha_type.as_ptr_or_null())
-        })
-        .map(|h| unsafe { Borrows::unchecked_new(h) })
-    }
+    Err(result)
 }

@@ -18,36 +18,15 @@ pub fn download(url: impl AsRef<str>) -> io::Result<Vec<u8>> {
         eprintln!("Unsupported file: URL {}", url);
         return Err(Error::from(ErrorKind::Unsupported));
     }
-    let resp = std::process::Command::new("curl")
-        // follow redirects
-        .arg("-L")
-        // fail fast with no "error pages" output. more of a hint though, so we might still get error on stdout.
-        // so make sure to check the actual status returned.
-        .arg("-f")
-        // silent. no progress or error messages. only pure "response data"
-        .arg("-s")
-        .arg(url)
-        .output();
+
+    let resp = ureq::get(url).call();
     match resp {
-        Ok(out) => {
-            // ideally, we would redirect response to a file directly, but lets take it one step at a time.
-            let result = out.stdout;
-            if out.status.success() {
-                Ok(result)
-            } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "curl error code: {:?}\ncurl stderr: {:?}",
-                        out.status.code(),
-                        std::str::from_utf8(&out.stderr)
-                    ),
-                ))
-            }
+        Ok(resp) => {
+            let mut reader = resp.into_reader();
+            let mut data = Vec::new();
+            reader.read_to_end(&mut data)?;
+            Ok(data)
         }
-        Err(e) => Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("curl command error : {e:#?}"),
-        )),
+        Err(error) => Err(io::Error::new(io::ErrorKind::Other, error.to_string())),
     }
 }

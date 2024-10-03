@@ -29,23 +29,23 @@ impl PictureRecorder {
         &mut self,
         bounds: impl AsRef<Rect>,
         mut bbh_factory: Option<&mut BBHFactory>,
-    ) -> &Canvas {
+    ) -> &mut Canvas {
         let canvas_ref = unsafe {
-            &*self.native_mut().beginRecording1(
+            &mut *self.native_mut().beginRecording1(
                 bounds.as_ref().native(),
                 bbh_factory.native_ptr_or_null_mut(),
             )
         };
 
-        Canvas::borrow_from_native(canvas_ref)
+        Canvas::borrow_from_native_mut(canvas_ref)
     }
 
-    pub fn recording_canvas(&mut self) -> Option<&Canvas> {
+    pub fn recording_canvas(&mut self) -> Option<&mut Canvas> {
         let canvas = unsafe { self.native_mut().getRecordingCanvas() };
         if canvas.is_null() {
             return None;
         }
-        Some(Canvas::borrow_from_native(unsafe { &*canvas }))
+        Some(Canvas::borrow_from_native_mut(unsafe { &mut *canvas }))
     }
 
     pub fn finish_recording_as_picture(&mut self, cull_rect: Option<&Rect>) -> Option<Picture> {

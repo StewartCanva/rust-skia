@@ -1,16 +1,16 @@
-use std::{fmt, io, ptr};
-
-use skia_bindings::{self as sb, SkRefCntBase, SkTypeface, SkTypeface_LocalizedStrings};
-
 use crate::{
     font_arguments,
     font_parameters::VariationAxis,
-    interop::{self, NativeStreamBase, RustStream, RustWStream, StreamAsset},
+    interop::{self, MemoryStream, NativeStreamBase, StreamAsset},
     prelude::*,
-    Data, EncodedText, FontArguments, FontMgr, FontStyle, FourByteTag, GlyphId, Rect, Unichar,
+    Data, FontArguments, FontStyle, FourByteTag, GlyphId, Rect, TextEncoding, Unichar,
 };
+use skia_bindings::{self as sb, SkRefCntBase, SkTypeface, SkTypeface_LocalizedStrings};
+use std::{ffi, fmt, mem, ptr};
 
 pub type TypefaceId = skia_bindings::SkTypefaceID;
+#[deprecated(since = "0.49.0", note = "use TypefaceId")]
+pub type FontId = TypefaceId;
 pub type FontTableTag = skia_bindings::SkFontTableTag;
 
 pub use skia_bindings::SkTypeface_SerializeBehavior as SerializeBehavior;
@@ -32,18 +32,29 @@ impl NativeRefCountedBase for SkTypeface {
     type Base = SkRefCntBase;
 }
 
+impl Default for Typeface {
+    fn default() -> Self {
+        Typeface::from_ptr(unsafe { sb::C_SkTypeface_MakeDefault() }).unwrap()
+    }
+}
+
 impl fmt::Debug for Typeface {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Typeface")
             .field("font_style", &self.font_style())
             .field("is_fixed_pitch", &self.is_fixed_pitch())
             .field("unique_id", &self.unique_id())
+            .field("family_name", &self.family_name())
             .field("bounds", &self.bounds())
             .finish()
     }
 }
 
 impl Typeface {
+    pub fn new(family_name: impl AsRef<str>, font_style: FontStyle) -> Option<Self> {
+        Self::from_name(family_name, font_style)
+    }
+
     pub fn font_style(&self) -> FontStyle {
         FontStyle::from_native_c(self.native().fStyle)
     }
@@ -100,38 +111,52 @@ impl Typeface {
         self.native().fUniqueID
     }
 
+    // TODO: wrap SkTypeface::UniqueID()?
+
     // Decided not to support PartialEq instead of this function,
     // because Skia does not support the operator ==.
     pub fn equal(face_a: impl AsRef<Typeface>, face_b: impl AsRef<Typeface>) -> bool {
         unsafe { SkTypeface::Equal(face_a.as_ref().native(), face_b.as_ref().native()) }
     }
 
+    pub fn from_name(family_name: impl AsRef<str>, font_style: FontStyle) -> Option<Typeface> {
+        let family_name = ffi::CString::new(family_name.as_ref()).ok()?;
+        Typeface::from_ptr(unsafe {
+            sb::C_SkTypeface_MakeFromName(family_name.as_ptr(), *font_style.native())
+        })
+    }
+
+    // from_file is unsupported, because it is unclear what the
+    // encoding of the path name is. from_data can be used instead.
+
+    // TODO: MakeFromStream()?
+
+    pub fn from_data(data: impl Into<Data>, index: impl Into<Option<usize>>) -> Option<Typeface> {
+        Typeface::from_ptr(unsafe {
+            sb::C_SkTypeface_MakeFromData(
+                data.into().into_ptr(),
+                index.into().unwrap_or_default().try_into().unwrap(),
+            )
+        })
+    }
+
     pub fn clone_with_arguments(&self, arguments: &FontArguments) -> Option<Typeface> {
         Typeface::from_ptr(unsafe { sb::C_SkTypeface_makeClone(self.native(), arguments.native()) })
     }
 
-    pub fn serialize_stream(&self, mut write: impl io::Write, behavior: SerializeBehavior) {
-        let mut stream = RustWStream::new(&mut write);
-        unsafe { sb::C_SkTypeface_serialize2(self.native(), stream.stream_mut(), behavior) }
-    }
+    // TODO: serialize(Write)?
 
     // TODO: return Data as impl Deref<[u8]> / Borrow<[u8]> here?
     pub fn serialize(&self, behavior: SerializeBehavior) -> Data {
         Data::from_ptr(unsafe { sb::C_SkTypeface_serialize(self.native(), behavior) }).unwrap()
     }
 
-    // TODO: Wrap Deserialize(Read?)
+    // TODO: Deserialize(Read?)
 
-    pub fn make_deserialize(
-        mut data: impl io::Read,
-        last_resort_mgr: impl Into<Option<FontMgr>>,
-    ) -> Option<Typeface> {
-        let mut stream = RustStream::new(&mut data);
+    pub fn deserialize(data: &[u8]) -> Option<Typeface> {
+        let mut stream = MemoryStream::from_bytes(data);
         Typeface::from_ptr(unsafe {
-            sb::C_SkTypeface_MakeDeserialize(
-                stream.stream_mut(),
-                last_resort_mgr.into().into_ptr_or_null(),
-            )
+            sb::C_SkTypeface_MakeDeserialize(stream.native_mut().as_stream_mut())
         })
     }
 
@@ -147,15 +172,20 @@ impl Typeface {
     }
 
     pub fn str_to_glyphs(&self, str: impl AsRef<str>, glyphs: &mut [GlyphId]) -> usize {
-        self.text_to_glyphs(str.as_ref(), glyphs)
+        self.text_to_glyphs(str.as_ref().as_bytes(), TextEncoding::UTF8, glyphs)
     }
 
-    pub fn text_to_glyphs(&self, text: impl EncodedText, glyphs: &mut [GlyphId]) -> usize {
-        let (ptr, size, encoding) = text.as_raw();
+    pub fn text_to_glyphs<C>(
+        &self,
+        text: &[C],
+        encoding: TextEncoding,
+        glyphs: &mut [GlyphId],
+    ) -> usize {
+        let byte_length = mem::size_of_val(text);
         unsafe {
             self.native().textToGlyphs(
-                ptr,
-                size,
+                text.as_ptr() as _,
+                byte_length,
                 encoding.into_native(),
                 glyphs.as_mut_ptr(),
                 glyphs.len().try_into().unwrap(),
@@ -305,39 +335,29 @@ impl Iterator for LocalizedStringsIter {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
-    use crate::{FontMgr, FontStyle};
-
     use super::{SerializeBehavior, Typeface};
 
     #[test]
     fn serialize_and_deserialize_default_typeface() {
-        let tf = FontMgr::new()
-            .legacy_make_typeface(None, FontStyle::normal())
-            .unwrap();
-
+        let tf = Typeface::default();
         let serialized = tf.serialize(SerializeBehavior::DoIncludeData);
         // On Android, the deserialized typeface name changes from sans-serif to Roboto.
         // (which is probably OK, because Roboto _is_ the default font, so we do another
         // serialization / deserialization and compare the family name with already deserialized
         // one.)
-        let deserialized =
-            Typeface::make_deserialize(Cursor::new(serialized.as_bytes()), None).unwrap();
+        let deserialized = Typeface::deserialize(&serialized).unwrap();
         let serialized2 = deserialized.serialize(SerializeBehavior::DoIncludeData);
-        let deserialized2 =
-            Typeface::make_deserialize(Cursor::new(serialized2.as_bytes()), None).unwrap();
+        let deserialized2 = Typeface::deserialize(&serialized2).unwrap();
 
         // why aren't they not equal?
-        assert!(!Typeface::equal(&tf, &deserialized));
+        // assert!(Typeface::equal(&tf, &deserialized));
         assert_eq!(deserialized.family_name(), deserialized2.family_name());
     }
 
     #[test]
     fn family_name_iterator_owns_the_strings_and_returns_at_least_one_name_for_the_default_typeface(
     ) {
-        let fm = FontMgr::default();
-        let tf = fm.legacy_make_typeface(None, FontStyle::normal()).unwrap();
+        let tf = Typeface::default();
         let family_names = tf.new_family_name_iterator();
         drop(tf);
 
@@ -351,9 +371,7 @@ mod tests {
 
     #[test]
     fn get_font_data_of_default() {
-        let tf = FontMgr::new()
-            .legacy_make_typeface(None, FontStyle::normal())
-            .unwrap();
+        let tf = Typeface::default();
         let (data, _ttc_index) = tf.to_font_data().unwrap();
         assert!(!data.is_empty());
     }

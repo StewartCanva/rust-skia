@@ -1,31 +1,29 @@
-use std::ptr;
-
-use skia_bindings::{self as sb, SkImageFilter, SkRect};
-
 use crate::{
-    prelude::*, scalar, Blender, Color, Color4f, ColorChannel, ColorFilter, ColorSpace,
-    CubicResampler, IPoint, IRect, ISize, Image, ImageFilter, Matrix, Picture, Point3, Rect,
-    SamplingOptions, Shader, TileMode, Vector,
+    prelude::*, scalar, Blender, Color, ColorChannel, ColorFilter, CubicResampler, IPoint, IRect,
+    ISize, Image, ImageFilter, Matrix, Picture, Point3, Rect, SamplingOptions, Shader, TileMode,
+    Vector,
 };
+use skia_bindings::{self as sb, SkImageFilter, SkImageFilters_CropRect};
 
-/// This is just a convenience type to allow passing [`IRect`]s, [`Rect`]s, and optional references
-/// to those types as a crop rect for the image filter factories. It's not intended to be used
-/// directly.
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct CropRect(Option<Rect>);
+pub struct CropRect(Rect);
+
+native_transmutable!(SkImageFilters_CropRect, CropRect, crop_rect_layout);
 
 impl CropRect {
-    pub const NO_CROP_RECT: CropRect = CropRect(None);
+    pub const NO_CROP_RECT: CropRect = CropRect(Rect {
+        left: scalar::NEG_INFINITY,
+        top: scalar::NEG_INFINITY,
+        right: scalar::INFINITY,
+        bottom: scalar::INFINITY,
+    });
 
     pub fn rect(&self) -> Option<Rect> {
-        self.0
-    }
-
-    fn native(&self) -> *const SkRect {
-        match self.0 {
-            None => ptr::null(),
-            Some(r) => r.native(),
+        if *self == Self::NO_CROP_RECT {
+            None
+        } else {
+            Some(self.0)
         }
     }
 }
@@ -50,7 +48,7 @@ impl From<&CropRect> for CropRect {
 
 impl From<IRect> for CropRect {
     fn from(r: IRect) -> Self {
-        Self(Some(Rect::from(r)))
+        Self(Rect::from(r))
     }
 }
 
@@ -62,24 +60,16 @@ impl From<&IRect> for CropRect {
 
 impl From<Rect> for CropRect {
     fn from(r: Rect) -> Self {
-        Self(Some(r))
+        Self(r)
     }
 }
 
 impl From<&Rect> for CropRect {
     fn from(r: &Rect) -> Self {
-        Self(Some(*r))
+        Self(*r)
     }
 }
 
-/// Create a filter that implements a custom blend mode. Each output pixel is the result of
-/// combining the corresponding background and foreground pixels using the 4 coefficients:
-///    k1 * foreground * background + k2 * foreground + k3 * background + k4
-/// * `k1`, `k2`, `k3`, `k4` The four coefficients used to combine the foreground and background.
-/// * `enforce_pm_color` - If `true`, the RGB channels will be clamped to the calculated alpha.
-/// * `background` - The background content, using the source bitmap when this is null.
-/// * `foreground` - The foreground content, using the source bitmap when this is null.
-/// * `crop_rect` - Optional rectangle that crops the inputs and output.
 #[allow(clippy::too_many_arguments)]
 pub fn arithmetic(
     k1: scalar,
@@ -105,11 +95,6 @@ pub fn arithmetic(
     })
 }
 
-/// This filter takes an [`crate::BlendMode`] and uses it to composite the two filters together.
-/// * `blender` - The blender that defines the compositing operation
-/// * `background` - The Dst pixels used in blending, if null the source bitmap is used.
-/// * `foreground` - The Src pixels used in blending, if null the source bitmap is used.
-/// * `crop_rect``         Optional rectangle to crop input and output.
 pub fn blend(
     mode: impl Into<Blender>,
     background: impl Into<Option<ImageFilter>>,
@@ -126,13 +111,6 @@ pub fn blend(
     })
 }
 
-/// Create a filter that blurs its input by the separate X and Y sigmas. The provided tile mode
-/// is used when the blur kernel goes outside the input image.
-/// * `sigma_x` - The Gaussian sigma value for blurring along the X axis.
-/// * `sigma_y` - The Gaussian sigma value for blurring along the Y axis.
-/// * `tile_mode` - The tile mode applied at edges .
-/// * `input` - The input filter that is blurred, uses source bitmap if this is null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn blur(
     (sigma_x, sigma_y): (scalar, scalar),
     tile_mode: impl Into<Option<TileMode>>,
@@ -164,10 +142,6 @@ pub fn color_filter(
     })
 }
 
-/// Create a filter that composes 'inner' with 'outer', such that the results of 'inner' are
-/// treated as the source bitmap passed to 'outer', i.e. result = outer(inner(source)).
-/// * `outer` - The outer filter that evaluates the results of inner.
-/// * `inner` - The inner filter that produces the input to outer.
 pub fn compose(
     outer: impl Into<ImageFilter>,
     inner: impl Into<ImageFilter>,
@@ -177,43 +151,11 @@ pub fn compose(
     })
 }
 
-/// Create a filter that applies a crop to the result of the 'input' filter. Pixels within the
-/// crop rectangle are unmodified from what 'input' produced. Pixels outside of crop match the
-/// provided [`TileMode`] (defaulting to `Decal`).
-///
-/// * `rect` - The cropping geometry
-/// * `tile_mode` - The tile mode applied to pixels *outside* of 'crop'
-/// * `input` - The input filter that is cropped, uses source image if this is `None`
-pub fn crop(
-    rect: impl AsRef<Rect>,
-    tile_mode: impl Into<Option<TileMode>>,
-    input: impl Into<Option<ImageFilter>>,
-) -> Option<ImageFilter> {
-    ImageFilter::from_ptr(unsafe {
-        sb::C_SkImageFilters_Crop(
-            rect.as_ref().native(),
-            tile_mode.into().unwrap_or(TileMode::Decal),
-            input.into().into_ptr_or_null(),
-        )
-    })
-}
-
-/// Create a filter that moves each pixel in its color input based on an (x,y) vector encoded
-/// in its displacement input filter. Two color components of the displacement image are
-/// mapped into a vector as `scale * (color[xChannel], color[yChannel])`, where the channel
-/// selectors are one of R, G, B, or A.
-/// * `x_channel_selector` - RGBA channel that encodes the x displacement per pixel.
-/// * `y_channel_selector` - RGBA channel that encodes the y displacement per pixel.
-/// * `scale` - Scale applied to displacement extracted from image.
-/// * `displacement` - The filter defining the displacement image, or `None` to use source.
-/// * `color` - The filter providing the color pixels to be displaced. If `None`,
-///                         it will use the source.
-/// * `crop_rect` - Optional rectangle that crops the color input and output.
 pub fn displacement_map(
     (x_channel_selector, y_channel_selector): (ColorChannel, ColorChannel),
     scale: scalar,
     displacement: impl Into<Option<ImageFilter>>,
-    color: impl Into<Option<ImageFilter>>,
+    color: impl Into<ImageFilter>,
     crop_rect: impl Into<CropRect>,
 ) -> Option<ImageFilter> {
     ImageFilter::from_ptr(unsafe {
@@ -222,30 +164,20 @@ pub fn displacement_map(
             y_channel_selector,
             scale,
             displacement.into().into_ptr_or_null(),
-            color.into().into_ptr_or_null(),
+            color.into().into_ptr(),
             crop_rect.into().native(),
         )
     })
 }
 
-/// Create a filter that draws a drop shadow under the input content. This filter produces an
-/// image that includes the inputs' content.
-/// * `offset` - The offset of the shadow.
-/// * `sigma_x` - The blur radius for the shadow, along the X axis.
-/// * `sigma_y` - The blur radius for the shadow, along the Y axis.
-/// * `color` - The color of the drop shadow.
-/// * `color_space` - The color space of the drop shadow color.
-/// * `input` - The input filter, or will use the source bitmap if this is null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn drop_shadow(
-    offset: impl Into<Vector>,
+    delta: impl Into<Vector>,
     (sigma_x, sigma_y): (scalar, scalar),
-    color: impl Into<Color4f>,
-    color_space: impl Into<Option<ColorSpace>>,
+    color: impl Into<Color>,
     input: impl Into<Option<ImageFilter>>,
     crop_rect: impl Into<CropRect>,
 ) -> Option<ImageFilter> {
-    let delta = offset.into();
+    let delta = delta.into();
     let color = color.into();
     ImageFilter::from_ptr(unsafe {
         sb::C_SkImageFilters_DropShadow(
@@ -254,32 +186,20 @@ pub fn drop_shadow(
             sigma_x,
             sigma_y,
             color.into_native(),
-            color_space.into().into_ptr_or_null(),
             input.into().into_ptr_or_null(),
             crop_rect.into().native(),
         )
     })
 }
 
-/// Create a filter that renders a drop shadow, in exactly the same manner as ::DropShadow,
-/// except that the resulting image does not include the input content. This allows the shadow
-/// and input to be composed by a filter DAG in a more flexible manner.
-/// * `offset` - The offset of the shadow.
-/// * `sigma_x` - The blur radius for the shadow, along the X axis.
-/// * `sigma_y` - The blur radius for the shadow, along the Y axis.
-/// * `color` - The color of the drop shadow.
-/// * `color_space` - The color space of the drop shadow color.
-/// * `input` - The input filter, or will use the source bitmap if this is null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn drop_shadow_only(
-    offset: impl Into<Vector>,
+    delta: impl Into<Vector>,
     (sigma_x, sigma_y): (scalar, scalar),
-    color: impl Into<Color4f>,
-    color_space: impl Into<Option<ColorSpace>>,
+    color: impl Into<Color>,
     input: impl Into<Option<ImageFilter>>,
     crop_rect: impl Into<CropRect>,
 ) -> Option<ImageFilter> {
-    let delta = offset.into();
+    let delta = delta.into();
     let color = color.into();
     ImageFilter::from_ptr(unsafe {
         sb::C_SkImageFilters_DropShadowOnly(
@@ -288,35 +208,23 @@ pub fn drop_shadow_only(
             sigma_x,
             sigma_y,
             color.into_native(),
-            color_space.into().into_ptr_or_null(),
             input.into().into_ptr_or_null(),
             crop_rect.into().native(),
         )
     })
 }
 
-/// Create a filter that always produces transparent black.
-pub fn empty() -> ImageFilter {
-    ImageFilter::from_ptr(unsafe { sb::C_SkImageFilters_Empty() }).unwrap()
-}
-/// Create a filter that draws the 'src_rect' portion of image into 'dst_rect' using the given
-/// filter quality. Similar to [`crate::Canvas::draw_image_rect()`].
-///
-/// * `image` - The image that is output by the filter, subset by 'srcRect'.
-/// * `src_rect` - The source pixels sampled into 'dstRect'
-/// * `dst_rect` - The local rectangle to draw the image into.
-/// * `sampling` - The sampling to use when drawing the image.
 pub fn image<'a>(
     image: impl Into<Image>,
     src_rect: impl Into<Option<&'a Rect>>,
     dst_rect: impl Into<Option<&'a Rect>>,
-    sampling: impl Into<Option<SamplingOptions>>,
+    sampling_options: impl Into<Option<SamplingOptions>>,
 ) -> Option<ImageFilter> {
     let image = image.into();
     let image_rect = Rect::from_iwh(image.width(), image.height());
     let src_rect = src_rect.into().unwrap_or(&image_rect);
     let dst_rect = dst_rect.into().unwrap_or(&image_rect);
-    let sampling_options: SamplingOptions = sampling.into().unwrap_or_else(|| {
+    let sampling_options: SamplingOptions = sampling_options.into().unwrap_or_else(|| {
         CubicResampler {
             b: 1.0 / 3.0,
             c: 1.0 / 3.0,
@@ -334,19 +242,11 @@ pub fn image<'a>(
     })
 }
 
-/// Create a filter that fills 'lens_bounds' with a magnification of the input.
-///
-/// * `lens_bounds` - The outer bounds of the magnifier effect
-/// * `zoom_amount` - The amount of magnification applied to the input image
-/// * `inset` - The size or width of the fish-eye distortion around the magnified content
-/// * `sampling` - The [`SamplingOptions`] applied to the input image when magnified
-/// * `input` - The input filter that is magnified; if null the source bitmap is used
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn magnifier(
     lens_bounds: impl AsRef<Rect>,
     zoom_amount: scalar,
     inset: scalar,
-    sampling: SamplingOptions,
+    sampling_options: SamplingOptions,
     input: impl Into<Option<ImageFilter>>,
     crop_rect: impl Into<CropRect>,
 ) -> Option<ImageFilter> {
@@ -355,28 +255,13 @@ pub fn magnifier(
             lens_bounds.as_ref().native(),
             zoom_amount,
             inset,
-            sampling.native(),
+            sampling_options.native(),
             input.into().into_ptr_or_null(),
             crop_rect.into().native(),
         )
     })
 }
 
-/// Create a filter that applies an NxM image processing kernel to the input image. This can be
-/// used to produce effects such as sharpening, blurring, edge detection, etc.
-/// * `kernel_size` - The kernel size in pixels, in each dimension (N by M).
-/// * `kernel` - The image processing kernel. Must contain N * M elements, in row order.
-/// * `gain` - A scale factor applied to each pixel after convolution. This can be
-///                      used to normalize the kernel, if it does not already sum to 1.
-/// * `bias` - A bias factor added to each pixel after convolution.
-/// * `kernel_offset` - An offset applied to each pixel coordinate before convolution.
-///                      This can be used to center the kernel over the image
-///                      (e.g., a 3x3 kernel should have an offset of {1, 1}).
-/// * `tile_mode` - How accesses outside the image are treated.
-/// * `convolve_alpha` - If `true`, all channels are convolved. If `false`, only the RGB channels
-///                      are convolved, and alpha is copied from the source image.
-/// * `input` - The input image filter, if null the source bitmap is used instead.
-/// * `crop_rect` - Optional rectangle to which the output processing will be limited.
 #[allow(clippy::too_many_arguments)]
 pub fn matrix_convolution(
     kernel_size: impl Into<ISize>,
@@ -409,31 +294,20 @@ pub fn matrix_convolution(
     })
 }
 
-/// Create a filter that transforms the input image by 'matrix'. This matrix transforms the
-/// local space, which means it effectively happens prior to any transformation coming from the
-/// [`crate::Canvas`] initiating the filtering.
-/// * `matrix` - The matrix to apply to the original content.
-/// * `sampling` - How the image will be sampled when it is transformed
-/// * `input` - The image filter to transform, or null to use the source image.
 pub fn matrix_transform(
     matrix: &Matrix,
-    sampling: impl Into<SamplingOptions>,
+    sampling_options: impl Into<SamplingOptions>,
     input: impl Into<Option<ImageFilter>>,
 ) -> Option<ImageFilter> {
     ImageFilter::from_ptr(unsafe {
         sb::C_SkImageFilters_MatrixTransform(
             matrix.native(),
-            sampling.into().native(),
+            sampling_options.into().native(),
             input.into().into_ptr_or_null(),
         )
     })
 }
 
-/// Create a filter that merges the filters together by drawing their results in order
-/// with src-over blending.
-/// * `filters` - The input filter array to merge. Any None
-///                 filter pointers will use the source bitmap instead.
-/// * `crop_rect` - Optional rectangle that crops all input filters and the output.
 pub fn merge(
     filters: impl IntoIterator<Item = Option<ImageFilter>>,
     crop_rect: impl Into<CropRect>,
@@ -449,16 +323,12 @@ pub fn merge(
     })
 }
 
-/// Create a filter that offsets the input filter by the given vector.
-/// * `offset` - The offset in local space that the image is shifted.
-/// * `input` - The input that will be moved, if null the source bitmap is used instead.
-/// * `crop_rect` - Optional rectangle to crop the input and output.
 pub fn offset(
-    offset: impl Into<Vector>,
+    delta: impl Into<Vector>,
     input: impl Into<Option<ImageFilter>>,
     crop_rect: impl Into<CropRect>,
 ) -> Option<ImageFilter> {
-    let delta = offset.into();
+    let delta = delta.into();
     ImageFilter::from_ptr(unsafe {
         sb::C_SkImageFilters_Offset(
             delta.x,
@@ -469,16 +339,11 @@ pub fn offset(
     })
 }
 
-/// Create a filter that produces the [`Picture`] as its output, clipped to both 'target_rect' and
-/// the picture's internal cull rect.
-///
-/// * `pic` - The picture that is drawn for the filter output.
-/// * `target_rect` - The drawing region for the picture.
 pub fn picture<'a>(
-    pic: impl Into<Picture>,
+    picture: impl Into<Picture>,
     target_rect: impl Into<Option<&'a Rect>>,
 ) -> Option<ImageFilter> {
-    let picture = pic.into();
+    let picture = picture.into();
     let picture_rect = picture.cull_rect();
     let target_rect = target_rect.into().unwrap_or(&picture_rect);
 
@@ -492,15 +357,6 @@ pub fn picture<'a>(
 pub use skia_bindings::SkImageFilters_Dither as Dither;
 variant_name!(Dither::Yes);
 
-/// Create a filter that fills the output with the per-pixel evaluation of the [`Shader`]. The
-/// shader is defined in the image filter's local coordinate system, so will automatically
-/// be affected by [`Canvas'`] transform.
-///
-/// Like `image()` and Picture(), this is a leaf filter that can be used to introduce inputs to
-/// a complex filter graph, but should generally be combined with a filter that as at least
-/// one null input to use the implicit source image.
-///
-/// * `shader` - The shader that fills the result image
 pub fn shader(shader: impl Into<Shader>, crop_rect: impl Into<CropRect>) -> Option<ImageFilter> {
     shader_with_dither(shader, Dither::No, crop_rect)
 }
@@ -515,10 +371,6 @@ pub fn shader_with_dither(
     })
 }
 
-/// Create a tile image filter.
-/// * `src` - Defines the pixels to tile
-/// * `dst` - Defines the pixel region that the tiles will be drawn to
-/// * `input` - The input that will be tiled, if null the source bitmap is used instead.
 pub fn tile(
     src: impl AsRef<Rect>,
     dst: impl AsRef<Rect>,
@@ -533,12 +385,6 @@ pub fn tile(
     })
 }
 
-/// Create a filter that dilates each input pixel's channel values to the max value within the
-/// given radii along the x and y axes.
-/// * `radius_x` - The distance to dilate along the x axis to either side of each pixel.
-/// * `radius_y` - The distance to dilate along the y axis to either side of each pixel.
-/// * `input` - The image filter that is dilated, using source bitmap if this is null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn dilate(
     (radius_x, radius_y): (scalar, scalar),
     input: impl Into<Option<ImageFilter>>,
@@ -554,12 +400,6 @@ pub fn dilate(
     })
 }
 
-/// Create a filter that erodes each input pixel's channel values to the minimum channel value
-/// within the given radii along the x and y axes.
-/// * `radius_x` - The distance to erode along the x axis to either side of each pixel.
-/// * `radius_y` - The distance to erode along the y axis to either side of each pixel.
-/// * `input` - The image filter that is eroded, using source bitmap if this is null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn erode(
     (radius_x, radius_y): (scalar, scalar),
     input: impl Into<Option<ImageFilter>>,
@@ -575,16 +415,6 @@ pub fn erode(
     })
 }
 
-/// Create a filter that calculates the diffuse illumination from a distant light source,
-/// interpreting the alpha channel of the input as the height profile of the surface (to
-/// approximate normal vectors).
-/// * `direction` - The direction to the distance light.
-/// * `light_color` - The color of the diffuse light source.
-/// * `surface_scale` - Scale factor to transform from alpha values to physical height.
-/// * `kd` - Diffuse reflectance coefficient.
-/// * `input` - The input filter that defines surface normals (as alpha), or uses the
-///                     source bitmap when null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn distant_lit_diffuse(
     direction: impl Into<Point3>,
     light_color: impl Into<Color>,
@@ -605,16 +435,6 @@ pub fn distant_lit_diffuse(
     })
 }
 
-/// Create a filter that calculates the diffuse illumination from a point light source, using
-/// alpha channel of the input as the height profile of the surface (to approximate normal
-/// vectors).
-/// * `location` - The location of the point light.
-/// * `light_color` - The color of the diffuse light source.
-/// * `surface_scale` - Scale factor to transform from alpha values to physical height.
-/// * `kd` - Diffuse reflectance coefficient.
-/// * `input` - The input filter that defines surface normals (as alpha), or uses the
-///                     source bitmap when `None`.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn point_lit_diffuse(
     location: impl Into<Point3>,
     light_color: impl Into<Color>,
@@ -635,25 +455,11 @@ pub fn point_lit_diffuse(
     })
 }
 
-/// Create a filter that calculates the diffuse illumination from a spot light source, using
-/// alpha channel of the input as the height profile of the surface (to approximate normal
-/// vectors). The spot light is restricted to be within 'cutoff_angle' of the vector between
-/// the location and target.
-/// * `location` - The location of the spot light.
-/// * `target` - The location that the spot light is point towards
-/// * `falloff_exponent` - Exponential falloff parameter for illumination outside of `cutoff_angle`
-/// * `cutoff_angle` - Maximum angle from lighting direction that receives full light
-/// * `light_color` - The color of the diffuse light source.
-/// * `surface_scale` - Scale factor to transform from alpha values to physical height.
-/// * `kd` - Diffuse reflectance coefficient.
-/// * `input` - The input filter that defines surface normals (as alpha), or uses the
-///                        source bitmap when null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 #[allow(clippy::too_many_arguments)]
 pub fn spot_lit_diffuse(
     location: impl Into<Point3>,
     target: impl Into<Point3>,
-    falloff_exponent: scalar,
+    specular_exponent: scalar,
     cutoff_angle: scalar,
     light_color: impl Into<Color>,
     surface_scale: scalar,
@@ -665,7 +471,7 @@ pub fn spot_lit_diffuse(
         sb::C_SkImageFilters_SpotLitDiffuse(
             location.into().native(),
             target.into().native(),
-            falloff_exponent,
+            specular_exponent,
             cutoff_angle,
             light_color.into().into_native(),
             surface_scale,
@@ -676,17 +482,6 @@ pub fn spot_lit_diffuse(
     })
 }
 
-/// Create a filter that calculates the specular illumination from a distant light source,
-/// interpreting the alpha channel of the input as the height profile of the surface (to
-/// approximate normal vectors).
-/// * `direction` - The direction to the distance light.
-/// * `light_color` - The color of the specular light source.
-/// * `surface_scale` - Scale factor to transform from alpha values to physical height.
-/// * `ks` - Specular reflectance coefficient.
-/// * `shininess` - The specular exponent determining how shiny the surface is.
-/// * `input` - The input filter that defines surface normals (as alpha), or uses the
-///                     source bitmap when `None`.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn distant_lit_specular(
     direction: impl Into<Point3>,
     light_color: impl Into<Color>,
@@ -709,17 +504,6 @@ pub fn distant_lit_specular(
     })
 }
 
-/// Create a filter that calculates the specular illumination from a point light source, using
-/// alpha channel of the input as the height profile of the surface (to approximate normal
-/// vectors).
-/// * `location` - The location of the point light.
-/// * `light_color` - The color of the specular light source.
-/// * `surface_scale` - Scale factor to transform from alpha values to physical height.
-/// * `ks` - Specular reflectance coefficient.
-/// * `shininess` - The specular exponent determining how shiny the surface is.
-/// * `input` - The input filter that defines surface normals (as alpha), or uses the
-///                     source bitmap when `None`.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 pub fn point_lit_specular(
     location: impl Into<Point3>,
     light_color: impl Into<Color>,
@@ -742,26 +526,11 @@ pub fn point_lit_specular(
     })
 }
 
-/// Create a filter that calculates the specular illumination from a spot light source, using
-/// alpha channel of the input as the height profile of the surface (to approximate normal
-/// vectors). The spot light is restricted to be within 'cutoff_angle' of the vector between
-/// the location and target.
-/// * `location` - The location of the spot light.
-/// * `target` - The location that the spot light is point towards
-/// * `falloff_exponent` - Exponential falloff parameter for illumination outside of `cutoff_angle`
-/// * `cutoff_angle` - Maximum angle from lighting direction that receives full light
-/// * `light_color` - The color of the specular light source.
-/// * `surface_scale` - Scale factor to transform from alpha values to physical height.
-/// * `ks` - Specular reflectance coefficient.
-/// * `shininess` - The specular exponent determining how shiny the surface is.
-/// * `input` - The input filter that defines surface normals (as alpha), or uses the
-///                        source bitmap when null.
-/// * `crop_rect` - Optional rectangle that crops the input and output.
 #[allow(clippy::too_many_arguments)]
 pub fn spot_lit_specular(
     location: impl Into<Point3>,
     target: impl Into<Point3>,
-    falloff_exponent: scalar,
+    specular_exponent: scalar,
     cutoff_angle: scalar,
     light_color: impl Into<Color>,
     surface_scale: scalar,
@@ -774,7 +543,7 @@ pub fn spot_lit_specular(
         sb::C_SkImageFilters_SpotLitSpecular(
             location.into().native(),
             target.into().native(),
-            falloff_exponent,
+            specular_exponent,
             cutoff_angle,
             light_color.into().into_native(),
             surface_scale,
@@ -787,7 +556,6 @@ pub fn spot_lit_specular(
 }
 
 impl ImageFilter {
-    /// [`arithmetic()`]
     pub fn arithmetic<'a>(
         inputs: impl Into<ArithmeticFPInputs>,
         background: impl Into<Option<Self>>,
@@ -807,7 +575,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`blur()`]
     pub fn blur<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -817,7 +584,6 @@ impl ImageFilter {
         blur(sigma, tile_mode, self, crop_rect.into().map(|r| r.into()))
     }
 
-    /// [`color_filter()`]
     pub fn color_filter<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -826,38 +592,26 @@ impl ImageFilter {
         color_filter(cf, self, crop_rect.into().map(|r| r.into()))
     }
 
-    /// [`compose()`]
     pub fn compose(outer: impl Into<ImageFilter>, inner: impl Into<ImageFilter>) -> Option<Self> {
         compose(outer, inner)
     }
 
-    /// [`crop()`]
-    pub fn crop(
-        rect: impl AsRef<Rect>,
-        tile_mode: impl Into<Option<TileMode>>,
-        input: impl Into<Option<ImageFilter>>,
-    ) -> Option<ImageFilter> {
-        crop(rect, tile_mode, input)
-    }
-
-    /// [`displacement_map()`]
     pub fn displacement_map_effect<'a>(
         channel_selectors: (ColorChannel, ColorChannel),
         scale: scalar,
-        displacement: impl Into<Option<ImageFilter>>,
-        color: impl Into<Option<ImageFilter>>,
+        displacement: impl Into<ImageFilter>,
+        color: impl Into<ImageFilter>,
         crop_rect: impl Into<Option<&'a IRect>>,
     ) -> Option<Self> {
         displacement_map(
             channel_selectors,
             scale,
-            displacement,
+            displacement.into(),
             color,
             crop_rect.into().map(|r| r.into()),
         )
     }
 
-    /// [`distant_lit_diffuse()`]
     pub fn distant_lit_diffuse_lighting<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -876,7 +630,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`point_lit_diffuse()`]
     pub fn point_lit_diffuse_lighting<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -895,7 +648,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`spot_lit_diffuse()`]
     #[allow(clippy::too_many_arguments)]
     pub fn spot_lit_diffuse_lighting<'a>(
         self,
@@ -921,7 +673,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`distant_lit_specular()`]
     pub fn distant_lit_specular_lighting<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -942,7 +693,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`point_lit_specular()`]
     pub fn point_lit_specular_lighting<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -963,7 +713,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`spot_lit_specular()`]
     #[allow(clippy::too_many_arguments)]
     pub fn spot_lit_specular_lighting<'a>(
         self,
@@ -991,7 +740,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`magnifier()`]
     pub fn magnifier<'a>(
         self,
         lens_bounds: impl AsRef<Rect>,
@@ -1010,7 +758,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`matrix_convolution()`]
     #[allow(clippy::too_many_arguments)]
     pub fn matrix_convolution<'a>(
         self,
@@ -1036,7 +783,6 @@ impl ImageFilter {
         )
     }
 
-    /// [`merge()`]
     pub fn merge<'a>(
         filters: impl IntoIterator<Item = Option<Self>>,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -1044,7 +790,6 @@ impl ImageFilter {
         merge(filters, crop_rect.into().map(|r| r.into()))
     }
 
-    /// [`dilate()`]
     pub fn dilate<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -1053,7 +798,6 @@ impl ImageFilter {
         dilate(radii, self, crop_rect.into().map(|r| r.into()))
     }
 
-    /// [`erode()`]
     pub fn erode<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -1062,7 +806,6 @@ impl ImageFilter {
         erode(radii, self, crop_rect.into().map(|r| r.into()))
     }
 
-    /// [`offset()`]
     pub fn offset<'a>(
         self,
         crop_rect: impl Into<Option<&'a IRect>>,
@@ -1071,7 +814,6 @@ impl ImageFilter {
         offset(delta, self, crop_rect.into().map(|r| r.into()))
     }
 
-    /// [`self::picture()`]
     pub fn from_picture<'a>(
         picture: impl Into<Picture>,
         crop_rect: impl Into<Option<&'a Rect>>,
@@ -1079,7 +821,6 @@ impl ImageFilter {
         self::picture(picture, crop_rect)
     }
 
-    /// [`tile()`]
     pub fn tile(self, src: impl AsRef<Rect>, dst: impl AsRef<Rect>) -> Option<Self> {
         tile(src, dst, self)
     }
@@ -1139,7 +880,7 @@ mod tests {
         assert_eq!(cr(None), CropRect::NO_CROP_RECT);
         assert_eq!(cr(CropRect::NO_CROP_RECT), CropRect::NO_CROP_RECT);
         #[allow(clippy::needless_borrow)]
-        let cr_ref = cr(CropRect::NO_CROP_RECT);
+        let cr_ref = cr(&CropRect::NO_CROP_RECT);
         assert_eq!(cr_ref, CropRect::NO_CROP_RECT);
         let irect = IRect {
             left: 1,
@@ -1147,19 +888,19 @@ mod tests {
             right: 3,
             bottom: 4,
         };
-        assert_eq!(cr(irect), CropRect(Some(Rect::from(irect))));
+        assert_eq!(cr(irect), CropRect(Rect::from(irect)));
         #[allow(clippy::needless_borrow)]
-        let cr_by_ref = cr(irect);
-        assert_eq!(cr_by_ref, CropRect(Some(Rect::from(irect))));
+        let cr_by_ref = cr(&irect);
+        assert_eq!(cr_by_ref, CropRect(Rect::from(irect)));
         let rect = Rect {
             left: 1.0,
             top: 2.0,
             right: 3.0,
             bottom: 4.0,
         };
-        assert_eq!(cr(rect), CropRect(Some(rect)));
+        assert_eq!(cr(rect), CropRect(rect));
         #[allow(clippy::needless_borrow)]
-        let cr_by_ref = cr(rect);
-        assert_eq!(cr_by_ref, CropRect(Some(rect)));
+        let cr_by_ref = cr(&rect);
+        assert_eq!(cr_by_ref, CropRect(rect));
     }
 }

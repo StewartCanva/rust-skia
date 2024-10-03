@@ -9,8 +9,6 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
-#include "include/gpu/ganesh/gl/GrGLMakeWebGLInterface.h"
 #include "include/gpu/gl/GrGLExtensions.h"
 #include "include/gpu/gl/GrGLInterface.h"
 #include "include/gpu/gl/GrGLAssembleInterface.h"
@@ -153,14 +151,31 @@ extern "C" const GrGLInterface* C_GrGLInterface_MakeAssembledInterface(void *ctx
 extern "C" GrDirectContext* C_GrDirectContext_MakeGL(GrGLInterface* interface, const GrContextOptions* options) {
     if (interface) {
         if (options) {
-            return GrDirectContexts::MakeGL(sp(interface), *options).release();
+            return GrDirectContext::MakeGL(sp(interface), *options).release();
         }
-        return GrDirectContexts::MakeGL(sp(interface)).release();
+        return GrDirectContext::MakeGL(sp(interface)).release();
     }
     if (options) {
-        return GrDirectContexts::MakeGL(*options).release();
+        return GrDirectContext::MakeGL(*options).release();
     }
-    return GrDirectContexts::MakeGL().release();
+    return GrDirectContext::MakeGL().release();
+}
+
+extern "C" void C_GrBackendFormat_ConstructGL(GrBackendFormat* uninitialized, GrGLenum format, GrGLenum target) {
+    new(uninitialized)GrBackendFormat(GrBackendFormat::MakeGL(format, target));
+}
+
+extern "C" GrBackendTexture* C_GrBackendTexture_newGL(
+    int width, int height,
+    GrMipMapped mipMapped,
+    const GrGLTextureInfo* glInfo,
+    const char* label,
+    size_t labelCount) {
+    return new GrBackendTexture(width, height, mipMapped, *glInfo, std::string_view(label, labelCount));
+}
+
+extern "C" void C_GrBackendRenderTarget_ConstructGL(GrBackendRenderTarget* uninitialized, int width, int height, int sampleCnt, int stencilBits, const GrGLFramebufferInfo* glInfo) {
+    new(uninitialized)GrBackendRenderTarget(width, height, sampleCnt, stencilBits, *glInfo);
 }
 
 //
@@ -181,7 +196,7 @@ extern "C" GrGLenum C_GrBackendFormats_AsGLFormatEnum(const GrBackendFormat* for
 
 extern "C" GrBackendTexture* C_GrBackendTextures_newGL(
     int width, int height,
-    skgpu::Mipmapped mipMapped,
+    GrMipMapped mipMapped,
     const GrGLTextureInfo* glInfo,
     const char* label,
     size_t labelCount) {
@@ -203,31 +218,3 @@ extern "C" void C_GrBackendRenderTargets_ConstructGL(GrBackendRenderTarget* unin
 extern "C" bool C_GrBackendRenderTargets_GetGLFramebufferInfo(const GrBackendRenderTarget* self, GrGLFramebufferInfo* info) {
     return GrBackendRenderTargets::GetGLFramebufferInfo(*self, info);
 }
-
-#if SK_ASSUME_WEBGL
-
-extern "C" const GrGLInterface* C_GrGLInterfaces_MakeWebGL() {
-    return GrGLInterfaces::MakeWebGL().release();
-}
-
-#endif
-
-#if defined(SK_BUILD_FOR_IOS)
-
-#include "include/gpu/ganesh/gl/ios/GrGLMakeIOSInterface.h"
-
-extern "C" const GrGLInterface* C_GrGLInterfaces_MakeIOS() {
-    return GrGLInterfaces::MakeIOS().release();
-}
-
-#endif
-
-#if defined(SK_BUILD_FOR_MAC)
-
-#include "include/gpu/ganesh/gl/mac/GrGLMakeMacInterface.h"
-
-extern "C" const GrGLInterface* C_GrGLInterfaces_MakeMac() {
-    return GrGLInterfaces::MakeMac().release();
-}
-
-#endif

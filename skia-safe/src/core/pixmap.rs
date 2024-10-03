@@ -164,7 +164,6 @@ impl<'pixels> Pixmap<'pixels> {
 
     pub fn addr_at(&self, p: impl Into<IPoint>) -> *const c_void {
         let p = p.into();
-        self.assert_pixel_exists(p);
         unsafe {
             (self.addr() as *const raw::c_char).add(self.info().compute_offset(p, self.row_bytes()))
                 as _
@@ -404,5 +403,7 @@ mod tests {
         let pixmap = Pixmap::default();
         assert!(pixmap.addr().is_null());
         assert!(pixmap.writable_addr().is_null());
+        assert!(pixmap.addr_at((10, 10)).is_null());
+        assert!(pixmap.writable_addr_at((10, 10)).is_null());
     }
 }

@@ -1,15 +1,13 @@
 pub mod pdf {
-    use std::{ffi::CString, fmt, io, mem, ptr};
-
-    use skia_bindings::{
-        self as sb, SkPDF_AttributeList, SkPDF_DateTime, SkPDF_Metadata, SkPDF_StructureElementNode,
-    };
-
     use crate::{
-        interop::{AsStr, RustWStream, SetStr},
+        interop::{AsStr, DynamicMemoryWStream, SetStr},
         prelude::*,
-        scalar, Document, MILESTONE,
+        scalar, DateTime, Document,
     };
+    use skia_bindings::{
+        self as sb, SkPDF_AttributeList, SkPDF_Metadata, SkPDF_StructureElementNode,
+    };
+    use std::{ffi::CString, fmt, mem, ptr};
 
     pub type AttributeList = Handle<SkPDF_AttributeList>;
     unsafe_send_sync!(AttributeList);
@@ -32,11 +30,6 @@ pub mod pdf {
         }
     }
 
-    /// Attributes for nodes in the PDF tree.
-    ///
-    /// Each attribute must have an owner (e.g. "Layout", "List", "Table", etc)
-    /// and an attribute name (e.g. "BBox", "RowSpan", etc.) from PDF32000_2008 14.8.5,
-    /// and then a value of the proper type according to the spec.
     impl AttributeList {
         pub fn append_int(
             &mut self,
@@ -111,7 +104,7 @@ pub mod pdf {
 
     impl Default for StructureElementNode {
         fn default() -> Self {
-            Self(ptr::NonNull::new(unsafe { sb::C_SkPDF_StructureElementNode_new() }).unwrap())
+            Self::new("")
         }
     }
 
@@ -128,10 +121,6 @@ pub mod pdf {
         }
     }
 
-    /// A node in a PDF structure tree, giving a semantic representation
-    /// of the content.  Each node ID is associated with content
-    /// by passing the [`crate::Canvas`] and node ID to [`Self::set_node_id()`] when drawing.
-    /// NodeIDs should be unique within each tree.
     impl StructureElementNode {
         pub fn new(type_string: impl AsRef<str>) -> Self {
             let mut node = Self::default();
@@ -215,113 +204,26 @@ pub mod pdf {
         }
     }
 
-    #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-    #[repr(C)]
-    pub struct DateTime {
-        /// The number of minutes that this is ahead of or behind UTC.
-        pub time_zone_minutes: i16,
-        /// e.g. 2005
-        pub year: u16,
-        /// 1..12
-        pub month: u8,
-        /// 0..6, 0==Sunday
-        pub day_of_week: u8,
-        /// 1..31
-        pub day: u8,
-        /// 0..23
-        pub hour: u8,
-        /// 0..59
-        pub minute: u8,
-        /// 0..59
-        pub second: u8,
-    }
-
-    native_transmutable!(SkPDF_DateTime, DateTime, date_time_layout);
-
-    /// Optional metadata to be passed into the PDF factory function.
-    #[derive(Debug)]
+    #[derive(Default, Debug)]
     pub struct Metadata {
-        /// The document's title.
         pub title: String,
-        /// The name of the person who created the document.
         pub author: String,
-        /// The subject of the document.
         pub subject: String,
-        /// Keywords associated with the document. Commas may be used to delineate keywords within
-        /// the string.
         pub keywords: String,
-        /// If the document was converted to PDF from another format, the name of the conforming
-        /// product that created the original document from which it was converted.
         pub creator: String,
-        /// The product that is converting this document to PDF.
         pub producer: String,
-        /// The date and time the document was created.
         pub creation: Option<DateTime>,
-        /// The date and time the document was most recently modified.
         pub modified: Option<DateTime>,
-        /// The natural language of the text in the PDF. If `lang` is empty, the root
-        /// StructureElementNode::lang will be used (if not empty). Text not in
-        /// this language should be marked with StructureElementNode::lang.
-        pub lang: String,
-        /// The DPI (pixels-per-inch) at which features without native PDF support
-        /// will be rasterized (e.g. draw image with perspective, draw text with
-        /// perspective, ...)  A larger DPI would create a PDF that reflects the
-        /// original intent with better fidelity, but it can make for larger PDF
-        /// files too, which would use more memory while rendering, and it would be
-        /// slower to be processed or sent online or to printer.
         pub raster_dpi: Option<scalar>,
-        /// If `true`, include XMP metadata, a document UUID, and `s_rgb` output intent
-        /// information.  This adds length to the document and makes it
-        /// non-reproducible, but are necessary features for PDF/A-2b conformance
-        pub pdf_a: bool,
-        /// Encoding quality controls the trade-off between size and quality. By default this is set
-        /// to 101 percent, which corresponds to lossless encoding. If this value is set to a value
-        /// <= 100, and the image is opaque, it will be encoded (using JPEG) with that quality
-        /// setting.
+        pub pdfa: bool,
         pub encoding_quality: Option<i32>,
-
-        pub structure_element_tree_root: Option<StructureElementNode>,
-
-        /// PDF streams may be compressed to save space.
-        /// Use this to specify the desired compression vs time tradeoff.
-        pub compression_level: CompressionLevel,
+        // TODO: this is not supported yet
+        structure_element_tree_root: Option<StructureElementNode>,
     }
 
-    impl Default for Metadata {
-        fn default() -> Self {
-            Self {
-                title: Default::default(),
-                author: Default::default(),
-                subject: Default::default(),
-                keywords: Default::default(),
-                creator: Default::default(),
-                producer: format!("Skia/PDF m{}", MILESTONE),
-                creation: Default::default(),
-                modified: Default::default(),
-                lang: Default::default(),
-                raster_dpi: Default::default(),
-                pdf_a: Default::default(),
-                encoding_quality: Default::default(),
-                structure_element_tree_root: None,
-                compression_level: Default::default(),
-            }
-        }
-    }
+    // TODO: SetNodeId
 
-    pub type CompressionLevel = skia_bindings::SkPDF_Metadata_CompressionLevel;
-    variant_name!(CompressionLevel::HighButSlow);
-
-    /// Create a PDF-backed document.
-    ///
-    /// PDF pages are sized in point units. 1 pt == 1/72 inch == 127/360 mm.
-    ///
-    /// * `metadata` - a PDFmetadata object.  Any fields may be left empty.
-    ///
-    /// @returns `None` if there is an error, otherwise a newly created PDF-backed [`Document`].
-    pub fn new_document<'a>(
-        writer: &'a mut impl io::Write,
-        metadata: Option<&Metadata>,
-    ) -> Document<'a> {
+    pub fn new_document(metadata: Option<&Metadata>) -> Document {
         let mut md = InternalMetadata::default();
         if let Some(metadata) = metadata {
             let internal = md.native_mut();
@@ -337,28 +239,32 @@ pub mod pdf {
             if let Some(modified) = metadata.modified {
                 internal.fModified = modified.into_native();
             }
-            internal.fLang.set_str(&metadata.lang);
             if let Some(raster_dpi) = metadata.raster_dpi {
                 internal.fRasterDPI = raster_dpi;
             }
-            internal.fPDFA = metadata.pdf_a;
+            internal.fPDFA = metadata.pdfa;
             if let Some(encoding_quality) = metadata.encoding_quality {
                 internal.fEncodingQuality = encoding_quality
             }
-            internal.fCompressionLevel = metadata.compression_level
+            if let Some(_structure_element_tree_root) = &metadata.structure_element_tree_root {
+                // TODO: How can we be sure that the tree root is not being dropped while the document is processed?
+                unimplemented!("");
+            }
         }
 
         // We enable harfbuzz font sub-setting in PDF documents if textlayout is enabled.
         #[cfg(all(feature = "textlayout", feature = "embed-icudtl"))]
         crate::icu::init();
 
-        let mut stream = RustWStream::new(writer);
+        // we can't move the memory stream around anymore as soon it's referred by
+        // the document.
+        let mut memory_stream = Box::pin(DynamicMemoryWStream::new());
         let document = RCHandle::from_ptr(unsafe {
-            sb::C_SkPDF_MakeDocument(stream.stream_mut(), md.native())
+            sb::C_SkPDF_MakeDocument(memory_stream.native_mut().base_mut(), md.native())
         })
         .unwrap();
 
-        Document::new(stream, document)
+        Document::new(memory_stream, document)
     }
 
     //
@@ -380,13 +286,9 @@ pub mod pdf {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::pdf;
-
-    #[test]
-    fn create_attribute_list() {
-        let mut _al = pdf::AttributeList::default();
-        _al.append_float_array("Owner", "Name", &[1.0, 2.0, 3.0]);
-    }
+#[test]
+fn create_attribute_list() {
+    use pdf::AttributeList;
+    let mut _al = AttributeList::default();
+    _al.append_float_array("Owner", "Name", &[1.0, 2.0, 3.0]);
 }

@@ -7,7 +7,7 @@ use crate::{prelude::*, Data};
 use skia_bindings::{
     self as sb, SkDynamicMemoryWStream, SkMemoryStream, SkStream, SkStreamAsset, SkWStream,
 };
-use std::{ffi, fmt, io, marker::PhantomData, mem, pin::Pin, ptr};
+use std::{ffi, fmt, io, marker::PhantomData, mem, ptr};
 
 /// Trait representing an Skia allocated Stream type with a base class of SkStream.
 #[repr(transparent)]
@@ -101,7 +101,6 @@ impl fmt::Debug for MemoryStream<'_> {
 
 impl MemoryStream<'_> {
     // Create a stream asset that refers the bytes provided.
-    #[allow(unused)]
     pub fn from_bytes(bytes: &[u8]) -> MemoryStream {
         let ptr = unsafe { sb::C_SkMemoryStream_MakeDirect(bytes.as_ptr() as _, bytes.len()) };
 
@@ -199,129 +198,165 @@ impl NativeDrop for sb::RustStream {
 
 #[allow(unused)]
 impl<'a> RustStream<'a> {
-    pub fn new_seekable<T: io::Read + io::Seek>(val: &'a mut T) -> Self {
-        Self {
-            inner: RefHandle::from_ptr(unsafe {
-                sb::C_RustStream_new(
-                    val as *mut T as *mut ffi::c_void,
-                    usize::MAX,
-                    Some(read_trampoline::<T>),
-                    Some(seek_start_trampoline::<T>),
-                    Some(seek_current_trampoline::<T>),
-                )
-            })
-            .unwrap(),
-            _phantom: PhantomData,
-        }
-    }
-
     pub fn new<T: io::Read>(val: &'a mut T) -> Self {
-        Self {
+        unsafe extern "C" fn read_trampoline<T>(
+            val: *mut ffi::c_void,
+            buf: *mut ffi::c_void,
+            count: usize,
+        ) -> usize
+        where
+            T: io::Read,
+        {
+            let val: &mut T = &mut *(val as *mut _);
+
+            if buf.is_null() {
+                const BUF_SIZE: usize = 128;
+
+                let mut buf = [0; BUF_SIZE];
+
+                let mut out_bytes = 0;
+                let mut count = count;
+
+                // This is OK because we just abort if it panics anyway.
+                let mut val = std::panic::AssertUnwindSafe(val);
+
+                match std::panic::catch_unwind(move || {
+                    while count > 0 {
+                        let bytes = match val.read(&mut buf[..count.min(BUF_SIZE)]) {
+                            Ok(0) => break,
+                            Ok(bytes) => bytes,
+                            Err(_) => 0,
+                        };
+
+                        count -= bytes;
+                        out_bytes += bytes;
+                    }
+
+                    out_bytes
+                }) {
+                    Ok(res) => res,
+                    Err(_) => {
+                        println!("Panic in FFI callback for `SkStream::read`");
+                        std::process::abort();
+                    }
+                }
+            } else {
+                let buf: &mut [u8] = std::slice::from_raw_parts_mut(buf as _, count as _);
+
+                val.read(buf).unwrap_or(0)
+            }
+        }
+
+        let (length, seek_start, seek_current): (
+            usize,
+            Option<unsafe extern "C" fn(_, _) -> _>,
+            Option<unsafe extern "C" fn(_, _) -> _>,
+        );
+
+        // Requires feature "specialization" <https://github.com/rust-lang/rust/issues/31844>
+        #[cfg(feature = "nightly")]
+        {
+            trait MaybeSeek {
+                fn maybe_seek(&mut self, from: io::SeekFrom) -> Option<u64>;
+            }
+
+            impl<T> MaybeSeek for T {
+                default fn maybe_seek(&mut self, _: io::SeekFrom) -> Option<u64> {
+                    None
+                }
+            }
+
+            impl<T> MaybeSeek for T
+            where
+                T: io::Seek,
+            {
+                fn maybe_seek(&mut self, from: io::SeekFrom) -> Option<u64> {
+                    self.seek(from).ok()
+                }
+            }
+
+            unsafe extern "C" fn seek_start_trampoline<T: MaybeSeek>(
+                val: *mut ffi::c_void,
+                pos: usize,
+            ) -> bool {
+                let val: &mut T = &mut *(val as *mut _);
+
+                // This is OK because we just abort if it panics anyway, we don't try
+                // to continue at all.
+                let val = std::panic::AssertUnwindSafe(val);
+
+                match std::panic::catch_unwind(move || {
+                    val.maybe_seek(io::SeekFrom::Start(pos as _)).is_some()
+                }) {
+                    Ok(res) => res,
+                    Err(_) => {
+                        println!("Panic in FFI callback for `SkStream::seek`");
+                        std::process::abort();
+                    }
+                }
+            }
+
+            unsafe extern "C" fn seek_current_trampoline<T: MaybeSeek>(
+                val: *mut ffi::c_void,
+                offset: libc::c_long,
+            ) -> bool {
+                let val: &mut T = &mut *(val as *mut _);
+
+                // This is OK because we just abort if it panics anyway, we don't try
+                // to continue at all.
+                let val = std::panic::AssertUnwindSafe(val);
+
+                match std::panic::catch_unwind(move || {
+                    val.maybe_seek(io::SeekFrom::Current(offset as _)).is_some()
+                }) {
+                    Ok(res) => res,
+                    Err(_) => {
+                        println!("Panic in FFI callback for `SkStream::move`");
+                        std::process::abort();
+                    }
+                }
+            }
+
+            length = if let Some(cur) = val.maybe_seek(io::SeekFrom::Current(0)) {
+                let length = val.maybe_seek(io::SeekFrom::End(0)).unwrap();
+
+                val.maybe_seek(io::SeekFrom::Start(cur));
+
+                length as usize
+            } else {
+                std::usize::MAX
+            };
+
+            seek_start = Some(seek_start_trampoline::<T>);
+            seek_current = Some(seek_current_trampoline::<T>);
+        }
+
+        #[cfg(not(feature = "nightly"))]
+        {
+            length = usize::MAX;
+            seek_start = None;
+            seek_current = None;
+        }
+
+        RustStream {
             inner: RefHandle::from_ptr(unsafe {
                 sb::C_RustStream_new(
                     val as *mut T as *mut ffi::c_void,
-                    usize::MAX,
+                    length,
                     Some(read_trampoline::<T>),
-                    None,
-                    None,
+                    seek_start,
+                    seek_current,
                 )
             })
             .unwrap(),
             _phantom: PhantomData,
-        }
-    }
-}
-
-unsafe extern "C" fn read_trampoline<T>(
-    val: *mut ffi::c_void,
-    buf: *mut ffi::c_void,
-    count: usize,
-) -> usize
-where
-    T: io::Read,
-{
-    let val: &mut T = &mut *(val as *mut _);
-
-    if buf.is_null() {
-        const BUF_SIZE: usize = 128;
-
-        let mut buf = [0; BUF_SIZE];
-
-        let mut out_bytes = 0;
-        let mut count = count;
-
-        // This is OK because we just abort if it panics anyway.
-        let mut val = std::panic::AssertUnwindSafe(val);
-
-        let reader = move || {
-            while count > 0 {
-                let bytes = match val.read(&mut buf[..count.min(BUF_SIZE)]) {
-                    Ok(0) => break,
-                    Ok(bytes) => bytes,
-                    Err(_) => 0,
-                };
-
-                count -= bytes;
-                out_bytes += bytes;
-            }
-
-            out_bytes
-        };
-
-        match std::panic::catch_unwind(reader) {
-            Ok(res) => res,
-            Err(_) => {
-                println!("Panic in FFI callback for `SkStream::read`");
-                std::process::abort();
-            }
-        }
-    } else {
-        let buf: &mut [u8] = std::slice::from_raw_parts_mut(buf as _, count as _);
-
-        val.read(buf).unwrap_or(0)
-    }
-}
-
-unsafe extern "C" fn seek_start_trampoline<T: io::Seek>(val: *mut ffi::c_void, pos: usize) -> bool {
-    let val: &mut T = &mut *(val as *mut _);
-
-    // This is OK because we just abort if it panics anyway, we don't try
-    // to continue at all.
-    let mut val = std::panic::AssertUnwindSafe(val);
-
-    match std::panic::catch_unwind(move || val.seek(io::SeekFrom::Start(pos as _))) {
-        Ok(res) => res.is_ok(),
-        Err(_) => {
-            println!("Panic in FFI callback for `SkStream::start`");
-            std::process::abort();
-        }
-    }
-}
-
-unsafe extern "C" fn seek_current_trampoline<T: io::Seek>(
-    val: *mut ffi::c_void,
-    offset: ffi::c_long,
-) -> bool {
-    let val: &mut T = &mut *(val as *mut _);
-
-    // This is OK because we just abort if it panics anyway, we don't try
-    // to continue at all.
-    let mut val = std::panic::AssertUnwindSafe(val);
-
-    match std::panic::catch_unwind(move || val.seek(io::SeekFrom::Current(offset as _))) {
-        Ok(res) => res.is_ok(),
-        Err(_) => {
-            println!("Panic in FFI callback for `SkStream::move`");
-            std::process::abort();
         }
     }
 }
 
 #[allow(unused)]
 pub struct RustWStream<'a> {
-    /// We need to be able to refer to the inner RustWStream to be referred to by pointer, so box
-    /// it.
-    inner: Pin<Box<Handle<sb::RustWStream>>>,
+    inner: Handle<sb::RustWStream>,
     _phantom: PhantomData<&'a mut ()>,
 }
 
@@ -343,14 +378,14 @@ impl NativeDrop for sb::RustWStream {
 impl<'a> RustWStream<'a> {
     pub fn new<T: io::Write>(writer: &'a mut T) -> Self {
         return RustWStream {
-            inner: Box::pin(Handle::construct(|ptr| unsafe {
+            inner: Handle::construct(|ptr| unsafe {
                 sb::C_RustWStream_construct(
                     ptr,
                     writer as *mut T as *mut ffi::c_void,
                     Some(write_trampoline::<T>),
                     Some(flush_trampoline::<T>),
                 );
-            })),
+            }),
             _phantom: PhantomData,
         };
 
@@ -368,7 +403,7 @@ impl<'a> RustWStream<'a> {
             // This is OK because we just abort if it panics anyway.
             let mut val = std::panic::AssertUnwindSafe(val);
 
-            let writer = move || {
+            match std::panic::catch_unwind(move || {
                 let mut written = 0;
                 while written != count {
                     match val.write(&buf[written..]) {
@@ -379,9 +414,7 @@ impl<'a> RustWStream<'a> {
                     }
                 }
                 true
-            };
-
-            match std::panic::catch_unwind(writer) {
+            }) {
                 Ok(res) => res,
                 Err(_) => {
                     println!("Panic in FFI callback for `SkWStream::write`");
@@ -394,15 +427,12 @@ impl<'a> RustWStream<'a> {
             let val: &mut T = &mut *(val as *mut _);
             // This is OK because we just abort if it panics anyway.
             let mut val = std::panic::AssertUnwindSafe(val);
-
-            let flusher = move || {
+            match std::panic::catch_unwind(move || {
                 // Not sure what could be done to handle a flush() error.
                 // Idea: use a with_stream method on the RustWStream that takes a closure, stores
                 // the flush() result and then return a result from with_stream.
                 let _flush_result_ignored = val.flush();
-            };
-
-            match std::panic::catch_unwind(flusher) {
+            }) {
                 Ok(_) => {}
                 Err(_) => {
                     println!("Panic in FFI callback for `SkWStream::flush`");

@@ -3,14 +3,14 @@
 #![allow(clippy::non_send_fields_in_send_ty)]
 // https://github.com/rust-lang/rust/issues/93367
 #![allow(unknown_lints)]
-#![allow(clippy::too_long_first_doc_paragraph)]
+#![allow(suspicious_auto_trait_impls)]
 
 mod macros;
 
 pub mod codec;
 #[deprecated(since = "0.33.1", note = "use codec::Result")]
 pub use codec::Result as CodecResult;
-pub use codec::{codecs, Codec, EncodedImageFormat, EncodedOrigin};
+pub use codec::{Codec, EncodedImageFormat, EncodedOrigin};
 
 mod core;
 mod docs;
@@ -22,9 +22,10 @@ mod interop;
 mod modules;
 mod pathops;
 mod prelude;
-pub(crate) mod private;
-pub mod svg;
 pub mod wrapper;
+// The module private may contain types that leak.
+pub mod private;
+pub mod svg;
 // TODO: We don't export utils/* into the crate's root yet. Should we?
 pub mod utils;
 
@@ -41,12 +42,10 @@ pub use crate::core::*;
 pub use docs::*;
 pub use effects::*;
 pub use encode_::*;
-#[allow(unused_imports)]
 pub use modules::*;
 pub use pathops::*;
 
 /// Stubs for types that are only available with the `gpu` feature.
-#[allow(unknown_lints, clippy::uninhabited_references)]
 #[cfg(not(feature = "gpu"))]
 pub mod gpu {
     use std::{

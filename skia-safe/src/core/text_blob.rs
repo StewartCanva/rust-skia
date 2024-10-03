@@ -1,12 +1,10 @@
-use std::{fmt, ptr, slice};
-
+use crate::{
+    prelude::*, scalar, Font, GlyphId, Paint, Point, RSXform, Rect, TextEncoding, Typeface,
+};
 use skia_bindings::{
     self as sb, SkTextBlob, SkTextBlobBuilder, SkTextBlob_Iter, SkTextBlob_Iter_Run, SkTypeface,
 };
-
-use crate::{
-    prelude::*, scalar, EncodedText, Font, GlyphId, Paint, Point, RSXform, Rect, Typeface,
-};
+use std::{convert::TryInto, fmt, ptr, slice};
 
 pub type TextBlob = RCHandle<SkTextBlob>;
 unsafe_send_sync!(TextBlob);
@@ -68,29 +66,34 @@ impl TextBlob {
     }
 
     pub fn from_str(str: impl AsRef<str>, font: &Font) -> Option<TextBlob> {
-        Self::from_text(str.as_ref(), font)
+        Self::from_text(str.as_ref().as_bytes(), TextEncoding::UTF8, font)
     }
 
-    pub fn from_text(text: impl EncodedText, font: &Font) -> Option<TextBlob> {
-        let (ptr, size, encoding) = text.as_raw();
+    pub fn from_text(text: &[u8], encoding: TextEncoding, font: &Font) -> Option<TextBlob> {
         TextBlob::from_ptr(unsafe {
-            sb::C_SkTextBlob_MakeFromText(ptr, size, font.native(), encoding.into_native())
+            sb::C_SkTextBlob_MakeFromText(
+                text.as_ptr() as _,
+                text.len(),
+                font.native(),
+                encoding.into_native(),
+            )
         })
     }
 
     pub fn from_pos_text_h(
-        text: impl EncodedText,
+        text: &[u8],
         x_pos: &[scalar],
         const_y: scalar,
         font: &Font,
+        encoding: impl Into<Option<TextEncoding>>,
     ) -> Option<TextBlob> {
-        // TODO: avoid that somehow.
-        assert_eq!(x_pos.len(), font.count_text(&text));
-        let (ptr, size, encoding) = text.as_raw();
+        let encoding = encoding.into().unwrap_or_default();
+        // TODO: avoid that verification somehow.
+        assert_eq!(x_pos.len(), font.count_text(text, encoding));
         TextBlob::from_ptr(unsafe {
             sb::C_SkTextBlob_MakeFromPosTextH(
-                ptr,
-                size,
+                text.as_ptr() as _,
+                text.len(),
                 x_pos.as_ptr(),
                 const_y,
                 font.native(),
@@ -99,14 +102,19 @@ impl TextBlob {
         })
     }
 
-    pub fn from_pos_text(text: impl EncodedText, pos: &[Point], font: &Font) -> Option<TextBlob> {
-        // TODO: avoid that somehow.
-        let (ptr, size, encoding) = text.as_raw();
-        assert_eq!(pos.len(), font.count_text(text));
+    pub fn from_pos_text(
+        text: &[u8],
+        pos: &[Point],
+        font: &Font,
+        encoding: impl Into<Option<TextEncoding>>,
+    ) -> Option<TextBlob> {
+        let encoding = encoding.into().unwrap_or_default();
+        // TODO: avoid that verification somehow.
+        assert_eq!(pos.len(), font.count_text(text, encoding));
         TextBlob::from_ptr(unsafe {
             sb::C_SkTextBlob_MakeFromPosText(
-                ptr,
-                size,
+                text.as_ptr() as _,
+                text.len(),
                 pos.native().as_ptr(),
                 font.native(),
                 encoding.into_native(),
@@ -115,17 +123,18 @@ impl TextBlob {
     }
 
     pub fn from_rsxform(
-        text: impl EncodedText,
+        text: &[u8],
         xform: &[RSXform],
         font: &Font,
+        encoding: impl Into<Option<TextEncoding>>,
     ) -> Option<TextBlob> {
-        // TODO: avoid that somehow.
-        let (ptr, size, encoding) = text.as_raw();
-        assert_eq!(xform.len(), font.count_text(text));
+        let encoding = encoding.into().unwrap_or_default();
+        // TODO: avoid that verification somehow.
+        assert_eq!(xform.len(), font.count_text(text, encoding));
         TextBlob::from_ptr(unsafe {
             sb::C_SkTextBlob_MakeFromRSXform(
-                ptr,
-                size,
+                text.as_ptr() as _,
+                text.len(),
                 xform.native().as_ptr(),
                 font.native(),
                 encoding.into_native(),

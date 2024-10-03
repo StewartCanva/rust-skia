@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+use skia_bindings::{
+    C_SkRefCntBase_ref, C_SkRefCntBase_unique, C_SkRefCntBase_unref, SkNVRefCnt, SkRefCnt,
+    SkRefCntBase,
+};
 use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -8,9 +11,8 @@ use std::{
     slice,
 };
 
-use skia_bindings::{
-    C_SkRefCntBase_ref, C_SkRefCntBase_unique, C_SkRefCntBase_unref, SkRefCnt, SkRefCntBase,
-};
+// Re-export TryFrom / TryInto to make them available in all modules that use prelude::*.
+pub use std::convert::{TryFrom, TryInto};
 
 /// Convert any reference into any other.
 pub(crate) unsafe fn transmute_ref<FromT, ToT>(from: &FromT) -> &ToT {
@@ -87,12 +89,10 @@ impl IfBoolSome for bool {
     }
 }
 
-#[cfg(test)]
 pub(crate) trait RefCount {
     fn ref_cnt(&self) -> usize;
 }
 
-#[cfg(test)]
 impl RefCount for SkRefCntBase {
     // the problem here is that the binding generator represents std::atomic as an u8 (we
     // are lucky that the C alignment rules make space for an i32), so to get the ref
@@ -108,15 +108,13 @@ impl RefCount for SkRefCntBase {
 
 impl NativeBase<SkRefCntBase> for SkRefCnt {}
 
-#[cfg(test)]
 impl RefCount for SkRefCnt {
     fn ref_cnt(&self) -> usize {
         self.base().ref_cnt()
     }
 }
 
-#[cfg(test)]
-impl RefCount for skia_bindings::SkNVRefCnt {
+impl RefCount for SkNVRefCnt {
     #[allow(clippy::cast_ptr_alignment)]
     fn ref_cnt(&self) -> usize {
         unsafe {
@@ -582,26 +580,25 @@ impl<N: NativeRefCounted> RCHandle<N> {
     }
 }
 
-#[cfg(test)]
+#[cfg(tests)]
 mod rc_handle_tests {
+    use crate::prelude::RCHandle;
+    use crate::Typeface;
+    use skia_bindings::SkTypeface;
     use std::ptr;
-
-    use skia_bindings::{SkFontMgr, SkTypeface};
-
-    use crate::{prelude::NativeAccess, FontMgr, Typeface};
 
     #[test]
     fn rc_native_ref_null() {
         let f: *mut SkTypeface = ptr::null_mut();
-        let r = Typeface::from_unshared_ptr(f);
+        let r = Typeface::from_native_ref(&f);
         assert!(r.is_none())
     }
 
     #[test]
     fn rc_native_ref_non_null() {
-        let mut font_mgr = FontMgr::new();
-        let f: *mut SkFontMgr = font_mgr.native_mut();
-        let r = FontMgr::from_unshared_ptr(f);
+        let tf = Typeface::default();
+        let f: *mut SkTypeface = tf.0;
+        let r = Typeface::from_native_ref(&f);
         assert!(r.is_some())
     }
 }
@@ -677,8 +674,6 @@ pub trait IndexGet {}
 pub trait IndexSet {}
 
 pub trait IndexGetter<I, O: Copy> {
-    // TODO: Not sure why clippy 1.78-beta.1 complains about this one.
-    #[allow(unused)]
     fn get(&self, index: I) -> O;
 }
 
@@ -742,19 +737,14 @@ where
         r
     }
 
-    /// Returns a reference to the Rust value by ransmuting a reference to the native value.
+    /// Provides access to the Rust value through a
+    /// transmuted reference to the native value.
     fn from_native_ref(nt: &NT) -> &Self {
         unsafe { transmute_ref(nt) }
     }
 
-    /// Returns a reference to the Rust array reference by transmuting a reference to the native
-    /// array.
-    fn from_native_array_ref<const N: usize>(nt: &[NT; N]) -> &[Self; N] {
-        unsafe { transmute_ref(nt) }
-    }
-
-    /// Returns a reference to the Rust value through a transmuted reference to the native mutable
-    /// value.
+    /// Provides access to the Rust value through a
+    /// transmuted reference to the native mutable value.
     fn from_native_ref_mut(nt: &mut NT) -> &mut Self {
         unsafe { transmute_ref_mut(nt) }
     }
@@ -910,12 +900,6 @@ impl<E> AsPointerOrNullMut<E> for Option<Vec<E>> {
     }
 }
 
-// impl Trait + 'a or '_ is almost always wrong:
-// <https://www.youtube.com/watch?v=CWiz_RtA1Hw>
-pub trait Captures<U> {}
-
-impl<T: ?Sized, U> Captures<U> for T {}
-
 // Wraps a handle so that the Rust's borrow checker assumes it represents
 // something that borrows something else.
 #[repr(transparent)]
@@ -952,12 +936,6 @@ pub(crate) trait BorrowsFrom: Sized {
 impl<T: Sized> BorrowsFrom for T {
     fn borrows<D: ?Sized>(self, _dep: &D) -> Borrows<Self> {
         Borrows(self, PhantomData)
-    }
-}
-
-impl<'a, H> Borrows<'a, H> {
-    pub(crate) unsafe fn unchecked_new(h: H) -> Self {
-        Self(h, PhantomData)
     }
 }
 

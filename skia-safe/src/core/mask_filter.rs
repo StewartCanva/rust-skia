@@ -36,7 +36,6 @@ impl MaskFilter {
     /// - `style`       The [`BlurStyle`] to use
     /// - `sigma`       Standard deviation of the Gaussian blur to apply. Must be > 0.
     /// - `respect_ctm` if `true` the blur's sigma is modified by the `ctm`.
-    ///
     /// Returns the new blur mask filter
     pub fn blur(
         style: BlurStyle,

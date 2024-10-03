@@ -1,98 +1,112 @@
-pub mod bmp_decoder {
-    use std::{io, result};
+use std::{io, result};
 
-    use crate::{codec::codecs::Decoder, codec::Result, Codec};
+use skia_bindings as sb;
 
-    pub fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
-        decoder().from_stream(stream)
+use super::{decode_stream, Codec, Decoder, Result};
+
+#[derive(Debug)]
+pub struct BmpDecoder;
+
+impl Decoder for BmpDecoder {
+    const ID: &'static str = "bmp";
+
+    fn is_format(data: &[u8]) -> bool {
+        unsafe { sb::C_SkBmpDecoder_IsBmp(data.as_ptr() as _, data.len()) }
     }
 
-    pub fn decoder() -> Decoder {
-        Decoder::construct(|decoder| unsafe { skia_bindings::C_SkBmpDecoder_Decoder(decoder) })
-    }
-}
-
-pub mod gif_decoder {
-    use std::{io, result};
-
-    use crate::{codec::codecs::Decoder, codec::Result, Codec};
-
-    pub fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
-        decoder().from_stream(stream)
-    }
-
-    pub fn decoder() -> Decoder {
-        Decoder::construct(|decoder| unsafe { skia_bindings::C_SkGifDecoder_Decoder(decoder) })
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
+        decode_stream(stream, sb::C_SkBmpDecoder_Decode)
     }
 }
 
-pub mod ico_decoder {
-    use std::{io, result};
+#[derive(Debug)]
+pub struct GifDecoder;
 
-    use crate::{codec::codecs::Decoder, codec::Result, Codec};
+impl Decoder for GifDecoder {
+    const ID: &'static str = "gif";
 
-    pub fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
-        decoder().from_stream(stream)
+    fn is_format(data: &[u8]) -> bool {
+        unsafe { sb::C_SkGifDecoder_IsGif(data.as_ptr() as _, data.len()) }
     }
 
-    pub fn decoder() -> Decoder {
-        Decoder::construct(|decoder| unsafe { skia_bindings::C_SkIcoDecoder_Decoder(decoder) })
-    }
-}
-
-pub mod jpeg_decoder {
-    use std::{io, result};
-
-    use crate::{codec::codecs::Decoder, codec::Result, Codec};
-
-    pub fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
-        decoder().from_stream(stream)
-    }
-
-    pub fn decoder() -> Decoder {
-        Decoder::construct(|decoder| unsafe { skia_bindings::C_SkJpegDecoder_Decoder(decoder) })
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
+        decode_stream(stream, sb::C_SkGifDecoder_Decode)
     }
 }
 
-pub mod png_decoder {
-    use std::{io, result};
+#[derive(Debug)]
+pub struct IcoDecoder;
 
-    use crate::{codec::codecs::Decoder, codec::Result, Codec};
+impl Decoder for IcoDecoder {
+    const ID: &'static str = "ico";
 
-    pub fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
-        decoder().from_stream(stream)
+    fn is_format(data: &[u8]) -> bool {
+        unsafe { sb::C_SkIcoDecoder_IsIco(data.as_ptr() as _, data.len()) }
     }
 
-    pub fn decoder() -> Decoder {
-        Decoder::construct(|decoder| unsafe { skia_bindings::C_SkPngDecoder_Decoder(decoder) })
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
+        decode_stream(stream, sb::C_SkIcoDecoder_Decode)
     }
 }
 
-pub mod wbmp_decoder {
-    use std::{io, result};
+#[derive(Debug)]
+pub struct JpegDecoder;
 
-    use crate::{codec::codecs::Decoder, codec::Result, Codec};
+impl Decoder for JpegDecoder {
+    const ID: &'static str = "jpeg";
 
-    pub fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
-        decoder().from_stream(stream)
+    fn is_format(data: &[u8]) -> bool {
+        unsafe { sb::C_SkJpegDecoder_IsJpeg(data.as_ptr() as _, data.len()) }
     }
 
-    pub fn decoder() -> Decoder {
-        Decoder::construct(|decoder| unsafe { skia_bindings::C_SkWbmpDecoder_Decoder(decoder) })
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
+        decode_stream(stream, sb::C_SkJpegDecoder_Decode)
+    }
+}
+
+#[derive(Debug)]
+pub struct PngDecoder;
+
+impl Decoder for PngDecoder {
+    const ID: &'static str = "png";
+
+    fn is_format(data: &[u8]) -> bool {
+        unsafe { sb::C_SkPngDecoder_IsPng(data.as_ptr() as _, data.len()) }
+    }
+
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
+        decode_stream(stream, sb::C_SkPngDecoder_Decode)
+    }
+}
+
+#[derive(Debug)]
+pub struct WbmpDecoder;
+
+impl Decoder for WbmpDecoder {
+    const ID: &'static str = "Wbmp";
+
+    fn is_format(data: &[u8]) -> bool {
+        unsafe { sb::C_SkWbmpDecoder_IsWbmp(data.as_ptr() as _, data.len()) }
+    }
+
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
+        decode_stream(stream, sb::C_SkWbmpDecoder_Decode)
     }
 }
 
 #[cfg(feature = "webp-decode")]
-pub mod webp_decoder {
-    use std::{io, result};
+#[derive(Debug)]
+pub struct WebpDecoder;
 
-    use crate::{codec::codecs::Decoder, codec::Result, Codec};
+#[cfg(feature = "webp-decode")]
+impl Decoder for WebpDecoder {
+    const ID: &'static str = "Webp";
 
-    pub fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
-        decoder().from_stream(stream)
+    fn is_format(data: &[u8]) -> bool {
+        unsafe { sb::C_SkWebpDecoder_IsWebp(data.as_ptr() as _, data.len()) }
     }
 
-    pub fn decoder() -> Decoder {
-        Decoder::construct(|decoder| unsafe { skia_bindings::C_SkWebpDecoder_Decoder(decoder) })
+    fn decode_stream(stream: &mut impl io::Read) -> result::Result<Codec, Result> {
+        decode_stream(stream, sb::C_SkWebpDecoder_Decode)
     }
 }

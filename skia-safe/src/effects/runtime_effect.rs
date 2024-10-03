@@ -128,8 +128,7 @@ impl NativeRefCountedBase for SkRuntimeEffect {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Options {
     pub force_unoptimized: bool,
-    allow_private_access: bool,
-    stable_key: u32,
+    use_private_rt_shader_module: bool,
     max_version_allowed: sb::SkSL_Version,
 }
 
@@ -139,8 +138,7 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             force_unoptimized: false,
-            allow_private_access: false,
-            stable_key: 0,
+            use_private_rt_shader_module: false,
             max_version_allowed: sb::SkSL_Version::k100,
         }
     }

@@ -3,10 +3,6 @@ use super::{generic, prelude::*};
 pub struct Emscripten;
 
 impl PlatformDetails for Emscripten {
-    fn uses_freetype(&self, _config: &BuildConfiguration) -> bool {
-        true
-    }
-
     fn gn_args(&self, config: &BuildConfiguration, builder: &mut GnArgsBuilder) {
         let features = &config.features;
 
@@ -15,6 +11,8 @@ impl PlatformDetails for Emscripten {
             .arg("cxx", quote("em++"))
             .arg("ar", quote("emar"))
             .arg("skia_gl_standard", quote("webgl"))
+            .arg("skia_use_freetype", yes())
+            .arg("skia_use_system_freetype2", no())
             .arg("skia_use_webgl", yes_if(features.gpu()))
             .arg("target_cpu", quote("wasm"));
 
@@ -57,14 +55,5 @@ impl PlatformDetails for Emscripten {
 
     fn link_libraries(&self, features: &Features) -> Vec<String> {
         generic::link_libraries(features)
-    }
-
-    fn filter_platform_features(
-        &self,
-        _use_system_libraries: bool,
-        mut features: Features,
-    ) -> Features {
-        features.embed_freetype = true;
-        features
     }
 }

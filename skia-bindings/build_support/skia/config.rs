@@ -1,7 +1,9 @@
 //! Full build support for the Skia library.
 
 use crate::build_support::{
-    binaries_config, features,
+    binaries_config,
+    cargo::{self, Target},
+    features,
     platform::{self, prelude::*},
 };
 use std::{
@@ -51,7 +53,7 @@ impl BuildConfiguration {
         // It's possible that the provided command line for the compiler already includes --target.
         // We assume that it's most specific/appropriate, extract and use is. It might for example include
         // a vendor infix, while cargo targets usually don't.
-        let mut target = cc
+        let target = cc
             .find("--target=")
             .map(|target_option_offset| {
                 let target_tail = &cc[(target_option_offset + "--target=".len())..];
@@ -61,10 +63,6 @@ impl BuildConfiguration {
                 cargo::parse_target(target_str)
             })
             .unwrap_or_else(cargo::target);
-
-        if target.architecture == "riscv64gc" {
-            target.architecture = "riscv64".to_string();
-        }
 
         BuildConfiguration {
             on_windows: cargo::host().is_windows(),
@@ -104,15 +102,14 @@ impl FinalBuildConfiguration {
         use_system_libraries: bool,
         skia_source_dir: &Path,
     ) -> FinalBuildConfiguration {
-        let features =
-            platform::filter_features(&build.target, use_system_libraries, build.features.clone());
+        let features = &build.features;
 
         // `SDKROOT` is the environment variable used on macOS to specify the sysroot.
         // `SDKTARGETSYSROOT` is the environment variable set in Yocto Linux SDKs when
         // cross-compiling.
         let sysroot = cargo::env_var("SDKTARGETSYSROOT").or_else(|| cargo::env_var("SDKROOT"));
 
-        let mut builder = GnArgsBuilder::new(&build.target);
+        let mut builder = GnArgsBuilder::new(&build.target, use_system_libraries);
 
         let gn_args = {
             builder
@@ -139,7 +136,6 @@ impl FinalBuildConfiguration {
                 .arg("skia_use_freetype_woff2", yes())
                 .arg("skia_use_xps", no())
                 .arg("skia_use_dng_sdk", yes_if(features.dng))
-                .arg("skia_use_freetype_woff2", yes_if(features.freetype_woff2))
                 .arg("cc", quote(&build.cc))
                 .arg("cxx", quote(&build.cxx));
 
@@ -175,6 +171,7 @@ impl FinalBuildConfiguration {
                     .arg("skia_use_harfbuzz", yes())
                     .arg("skia_pdf_subset_harfbuzz", yes())
                     .arg("skia_use_system_harfbuzz", yes_if(use_system_libraries))
+                    .arg("skia_use_sfntly", no())
                     .arg("skia_enable_skparagraph", yes());
                 // note: currently, tests need to be enabled, because modules/skparagraph
                 // is not included in the default dependency configuration.
@@ -189,24 +186,8 @@ impl FinalBuildConfiguration {
                 builder.arg("skia_use_system_libwebp", yes_if(use_system_libraries));
             }
 
-            let use_freetype = platform::uses_freetype(build);
-            builder.arg("skia_use_freetype", yes_if(use_freetype));
-            if use_freetype {
-                if features.embed_freetype {
-                    builder.arg("skia_use_system_freetype2", no());
-                } else {
-                    // third_party/freetype2/BUILD.gn hard-codes /usr/include/freetype2
-                    // as include path. When cross-compiling against a sysroot, we don't
-                    // want the host directory, we want the path from the sysroot, so prepend
-                    // a `=` to substitute the sysroot if present.
-                    // Ideally we'd overwrite the skia_system_freetype2_include_path
-                    // argument, but somehow that doesn't accept a `=`. So change it to
-                    // a non-existent path, append a sysroot prefixed include path, as well
-                    // as the previous fallback that's used if no sysroot is specified.
-                    builder.arg("skia_system_freetype2_include_path", "\"/does/not/exist\"");
-                    builder.cflag("-I=/usr/include/freetype2");
-                    builder.cflag("-I/usr/include/freetype2");
-                }
+            if features.embed_freetype {
+                builder.arg("skia_use_system_freetype2", no());
             }
 
             // target specific gn args.
@@ -279,7 +260,7 @@ pub fn build(
             .join(ninja::default_exe_name())
     });
 
-    if !offline {
+    if !offline && !build.use_system_libraries {
         println!("Synchronizing Skia dependencies");
         #[cfg(feature = "binary-cache")]
         crate::build_support::binary_cache::resolve_dependencies();
@@ -289,7 +270,6 @@ pub fn build(
                 // accidentally resolving an absolute directory for `GIT_SYNC_DEPS_PATH` when MingW
                 // Python 3 runs on Windows under MSys.
                 .env("GIT_SYNC_DEPS_PATH", "skia/DEPS")
-                .env("GIT_SYNC_DEPS_SKIP_EMSDK", "1")
                 .arg("skia/tools/git-sync-deps")
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
