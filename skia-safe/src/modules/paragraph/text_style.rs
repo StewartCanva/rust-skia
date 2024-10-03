@@ -236,7 +236,9 @@ impl fmt::Debug for TextStyle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TextStyle")
             .field("color", &self.color())
+            .field("has_foreground", &self.has_foreground())
             .field("foreground", &self.foreground())
+            .field("has_background", &self.has_background())
             .field("background", &self.background())
             .field("decoration", &self.decoration())
             .field("font_style", &self.font_style())
@@ -295,25 +297,21 @@ impl TextStyle {
         self
     }
 
-    pub fn foreground(&self) -> Option<Paint> {
-        self.native()
-            .fHasForeground
-            .if_true_some(Paint::construct(|p| unsafe {
-                sb::C_TextStyle_getForeground(self.native(), p)
-            }))
+    pub fn has_foreground(&self) -> bool {
+        self.native().fHasForeground
     }
 
-    pub fn set_foreground_paint(&mut self, paint: impl Into<Option<Paint>>) -> &mut Self {
-        let n = self.native_mut();
-        n.fHasForeground = paint
-            .into()
-            .map(|paint| unsafe { sb::C_TextStyle_setForegroundPaint(n, paint.native()) })
-            .is_some();
+    pub fn foreground(&self) -> Paint {
+        Paint::construct(|p| unsafe { sb::C_TextStyle_getForeground(self.native(), p) })
+    }
+
+    pub fn set_foreground_paint(&mut self, paint: &Paint) -> &mut Self {
+        unsafe { sb::C_TextStyle_setForegroundPaint(self.native_mut(), paint.native()) };
         self
     }
 
     #[deprecated(since = "0.64.0", note = "use set_foreground_paint()")]
-    pub fn set_foreground_color(&mut self, paint: impl Into<Option<Paint>>) -> &mut Self {
+    pub fn set_foreground_color(&mut self, paint: &Paint) -> &mut Self {
         self.set_foreground_paint(paint)
     }
 
@@ -322,25 +320,21 @@ impl TextStyle {
         self
     }
 
-    pub fn background(&self) -> Option<Paint> {
-        self.native()
-            .fHasBackground
-            .if_true_some(Paint::construct(|p| unsafe {
-                sb::C_TextStyle_getBackground(self.native(), p)
-            }))
+    pub fn has_background(&self) -> bool {
+        self.native().fHasBackground
     }
 
-    pub fn set_background_paint(&mut self, paint: impl Into<Option<Paint>>) -> &mut Self {
-        let n = self.native_mut();
-        n.fHasBackground = paint
-            .into()
-            .map(|paint| unsafe { sb::C_TextStyle_setBackgroundPaint(n, paint.native()) })
-            .is_some();
+    pub fn background(&self) -> Paint {
+        Paint::construct(|p| unsafe { sb::C_TextStyle_getBackground(self.native(), p) })
+    }
+
+    pub fn set_background_paint(&mut self, paint: &Paint) -> &mut Self {
+        unsafe { sb::C_TextStyle_setBackgroundPaint(self.native_mut(), paint.native()) };
         self
     }
 
     #[deprecated(since = "0.64.0", note = "use set_background_paint()")]
-    pub fn set_background_color(&mut self, paint: impl Into<Option<Paint>>) -> &mut Self {
+    pub fn set_background_color(&mut self, paint: &Paint) -> &mut Self {
         self.set_background_paint(paint)
     }
 

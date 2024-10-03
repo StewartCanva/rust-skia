@@ -15,7 +15,7 @@ impl PartialEq for ColorMatrix {
         let mut array_other = [0.0f32; 20];
         self.get_row_major(&mut array_self);
         other.get_row_major(&mut array_other);
-        array_self.eq(&array_other)
+        array_self == array_other
     }
 }
 

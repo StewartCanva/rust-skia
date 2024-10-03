@@ -1,11 +1,11 @@
-# <img alt="" width="48" align="top" src="artwork/rust-skia-icon_512x512.png"/> Safe Rust bindings to the [Skia Graphics Library](https://skia.org/).
+# <img alt="" width="48" align="top" src="artwork/rust-skia-icon_512x512.png"/> Safe Rust bindings for the [Skia Graphics Library](https://skia.org/).
 
 [![crates.io](https://img.shields.io/crates/v/skia-safe)](https://crates.io/crates/skia-safe) [![license](https://img.shields.io/crates/l/skia-safe)](LICENSE) [![Windows QA](https://github.com/rust-skia/rust-skia/actions/workflows/windows-qa.yaml/badge.svg?branch=master)](https://github.com/rust-skia/rust-skia/actions/workflows/windows-qa.yaml) [![Linux QA](https://github.com/rust-skia/rust-skia/actions/workflows/linux-qa.yaml/badge.svg?branch=master)](https://github.com/rust-skia/rust-skia/actions/workflows/linux-qa.yaml) [![macOS QA](https://github.com/rust-skia/rust-skia/actions/workflows/macos-qa.yaml/badge.svg?branch=master)](https://github.com/rust-skia/rust-skia/actions/workflows/macos-qa.yaml)
 
-Skia Submodule Status: chrome/m117 ([upstream changes][skia-upstream], [our changes][skia-ours]).
+Skia Submodule Status: chrome/m129 ([upstream changes][skia-upstream], [our changes][skia-ours]).
 
-[skia-upstream]: https://github.com/rust-skia/skia/compare/m117-0.65.1...google:chrome/m117
-[skia-ours]: https://github.com/google/skia/compare/chrome/m117...rust-skia:m117-0.65.1
+[skia-upstream]: https://github.com/rust-skia/skia/compare/m129-0.77.1...google:chrome/m129
+[skia-ours]: https://github.com/google/skia/compare/chrome/m129...rust-skia:m128-0.77.1
 
 ## About
 
@@ -39,16 +39,16 @@ For other platforms, more information is available at the [OpenSSL crate documen
 
 ### Platform Support, Build Targets, and Prebuilt Binaries
 
-Because building Skia takes a lot of time and needs tools that may be missing, the skia-bindings crate's `build.rs` tries to download prebuilt binaries from [the skia-binaries repository](https://github.com/rust-skia/skia-binaries/releases).
+Because building Skia takes a lot of time and needs tools that may be missing, the skia-bindings crate's `build.rs` attempts to download prebuilt binaries from [the skia-binaries repository](https://github.com/rust-skia/skia-binaries/releases) using the `curl` command line tool.
 
-| Platform                          | Binaries                                           |
-| --------------------------------- | -------------------------------------------------- |
-| Windows                           | `x86_64-pc-windows-msvc`                           |
-| Linux Ubuntu 16+<br />CentOS 7, 8 | `x86_64-unknown-linux-gnu`                         |
-| macOS                             | `x86_64-apple-darwin`                              |
-| Android                           | `aarch64-linux-android`<br/>`x86_64-linux-android` |
-| iOS                               | `aarch64-apple-ios`<br/>`x86_64-apple-ios`         |
-| WebAssembly                       | `wasm32-unknown-emscripten`                        |
+| Platform                          | Binaries                                                   |
+| --------------------------------- | ---------------------------------------------------------- |
+| Windows                           | `x86_64-pc-windows-msvc`                                   |
+| Linux Ubuntu 16+<br />CentOS 7, 8 | `x86_64-unknown-linux-gnu`<br/>`aarch64-unknown-linux-gnu` |
+| macOS                             | `x86_64-apple-darwin`<br/>`aarch64-apple-darwin`           |
+| Android                           | `aarch64-linux-android`<br/>`x86_64-linux-android`         |
+| iOS                               | `aarch64-apple-ios`<br/>`x86_64-apple-ios`                 |
+| WebAssembly                       | `wasm32-unknown-emscripten`                                |
 
 ### Wrappers & Codecs & Supported Features
 
@@ -160,13 +160,13 @@ For example, to compile for `aarch64`:
    ```bash
    rustup target install aarch64-linux-android
    ```
-2. Download the [r25b NDK](https://developer.android.com/ndk/downloads) (or newer) for your host architecture and unzip it.
-3. Compile your package for the `aarch64-linux-android` target:
+2. Download the [r26d NDK](https://developer.android.com/ndk/downloads) (or newer) for your host architecture and unzip it.
+3. Compile your project for the `aarch64-linux-android` target:
 
 On **macOS**:
 
 ```bash
-export ANDROID_NDK=:path-to-android-ndk-r25b
+export ANDROID_NDK=:path-to-android-ndk-r26d
 export PATH=$PATH:$ANDROID_NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin
 export CC_aarch64_linux_android=aarch64-linux-android26-clang
 export CXX_aarch64_linux_android=aarch64-linux-android26-clang++
@@ -181,7 +181,7 @@ We don't support Apple's Clang to build for Android on macOS, so you need to ins
 On **Linux**:
 
 ```bash
-export ANDROID_NDK=:path-to-android-ndk-r25b
+export ANDROID_NDK=:path-to-android-ndk-r26d
 export PATH=$PATH:$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
 export CC_aarch64_linux_android=aarch64-linux-android26-clang
 export CXX_aarch64_linux_android=aarch64-linux-android26-clang++
@@ -194,7 +194,7 @@ cargo build -vv --target aarch64-linux-android
 On **Windows** the Android NDK Clang executable must be invoked through `.cmd` scripts:
 
 ```bash
-export ANDROID_NDK=:path-to-android-ndk-r25b
+export ANDROID_NDK=:path-to-android-ndk-r26d
 export PATH=$PATH:$ANDROID_NDK/toolchains/llvm/prebuilt/windows-x86_64/bin
 export CC_aarch64_linux_android=aarch64-linux-android26-clang.cmd
 export CXX_aarch64_linux_android=aarch64-linux-android26-clang++.cmd
@@ -217,14 +217,14 @@ Compilation to iOS is supported on macOS targeting the iOS simulator (`--target 
 
 ### For WebAssembly
 
-Install `emscripten` version 3.1.1 or superior. In the examples below, we assume
-`emsdk` version `3.1.1` was installed with [asdf](http://asdf-vm.com/).
+Install `emscripten` version 3.1.57 or superior and make sure that llvm / clang 16+ is installed. In the examples below, we assume
+`emsdk` version `3.1.57` was installed with [asdf](http://asdf-vm.com/).
 
 Build with the `wasm32-unknown-emscripten` target (`wasm32-unknown-unknown` is
 unsupported because it is [fundamentally incompatible with linking C code](https://github.com/rustwasm/team/issues/291#issuecomment-645482430):
 
 ```bash
-export EMSDK=~/.asdf/installs/emsdk/3.1.1
+export EMSDK=~/.asdf/installs/emsdk/3.1.57
 export EMCC_CFLAGS="-s ERROR_ON_UNDEFINED_SYMBOLS=0"
 
 cargo build --target wasm32-unknown-emscripten
@@ -239,7 +239,7 @@ In `EMCC_CFLAGS`, `-s ERROR_ON_UNDEFINED_SYMBOLS` is a
 If you want to enable WebGL, you will also have to set `MAX_WEBGL_VERSION=2`:
 
 ```bash
-export EMSDK=~/.asdf/installs/emsdk/3.1.1
+export EMSDK=~/.asdf/installs/emsdk/3.1.57
 export EMCC_CFLAGS="-s ERROR_ON_UNDEFINED_SYMBOLS=0 -s MAX_WEBGL_VERSION=2"
 
 cargo build --target wasm32-unknown-emscripten --features gl
@@ -256,7 +256,7 @@ architecture, and can be retrieved with `brew info binutils`. Here is an
 example for Apple silicon:
 
 ```bash
-export EMSDK=~/.asdf/installs/emsdk/3.1.1
+export EMSDK=~/.asdf/installs/emsdk/3.1.57
 export EMCC_CFLAGS="-s ERROR_ON_UNDEFINED_SYMBOLS=0"
 export PATH="/opt/homebrew/opt/binutils/bin:$PATH"
 

@@ -107,6 +107,10 @@ extern "C" {
         return self->defaultFallback().release();
     }
 
+    SkTypeface* C_FontCollection_defaultEmojiFallback(FontCollection* self, SkUnichar emojiStart, SkFontStyle fontStyle, const SkString* locale) {
+        return self->defaultEmojiFallback(emojiStart, fontStyle, *locale).release();
+    }
+
     bool C_FontCollection_fontFallbackEnabled(const FontCollection* self) {
         return const_cast<FontCollection*>(self)->fontFallbackEnabled();
     }
@@ -123,6 +127,10 @@ extern "C" {
 extern "C" {
     void C_ParagraphCache_destruct(ParagraphCache* self) {
         self->~ParagraphCache();
+    }
+
+    void C_ParagraphCache_turnOn(ParagraphCache* self, bool value) {
+        self->turnOn(value);
     }
 
     int C_ParagraphCache_count(ParagraphCache* self) {
@@ -316,6 +324,10 @@ extern "C" {
         return self->getLineNumberAt(codeUnitIndex);
     }
 
+    int C_Paragraph_getLineNumberAtUTF16Offset(Paragraph* self, size_t codeUnitIndex) {
+        return self->getLineNumberAtUTF16Offset(codeUnitIndex);
+    }
+
     void C_Paragraph_getLineMetricsAt(const Paragraph* self, size_t lineNumber, Sink<LineMetrics>* lineMetrics) {
         LineMetrics lm;
         if (self->getLineMetricsAt(lineNumber, &lm)) {
@@ -345,8 +357,30 @@ extern "C" {
         }
     }
 
+    bool C_Paragraph_getGlyphInfoAtUTF16Offset(Paragraph* self, size_t codeUnitIndex, Paragraph::GlyphInfo* uninitialized) {
+        Paragraph::GlyphInfo gi;
+        if (self->getGlyphInfoAtUTF16Offset(codeUnitIndex, &gi)) {
+            new (uninitialized) Paragraph::GlyphInfo(gi);
+            return true;
+        }
+        return false;
+    }
+
+    bool C_Paragraph_getClosestUTF16GlyphInfoAt(Paragraph* self, SkScalar dx, SkScalar dy, Paragraph::GlyphInfo* uninitialized) {
+        Paragraph::GlyphInfo gi;
+        if (self->getClosestUTF16GlyphInfoAt(dx, dy, &gi)) {
+            new (uninitialized) Paragraph::GlyphInfo(gi);
+            return true;
+        }
+        return false;
+    }
+
     void C_Paragraph_getFontAt(const Paragraph* self, TextIndex codeUnitIndex, SkFont* uninitialized) {
         new (uninitialized) SkFont(self->getFontAt(codeUnitIndex));
+    }
+
+    void C_Paragraph_getFontAtUTF16Offset(Paragraph* self, size_t codeUnitIndex, SkFont* uninitialized) {
+        new (uninitialized) SkFont(self->getFontAtUTF16Offset(codeUnitIndex));
     }
 
     void C_Paragraph_getFonts(const Paragraph* self, VecSink<Paragraph::FontInfo>* r) {

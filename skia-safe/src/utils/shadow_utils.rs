@@ -8,13 +8,18 @@ bitflags! {
         const TRANSPARENT_OCCLUDER = sb::SkShadowFlags_kTransparentOccluder_ShadowFlag as u32;
         #[allow(clippy::unnecessary_cast)]
         const GEOMETRIC_ONLY = sb::SkShadowFlags_kGeometricOnly_ShadowFlag as u32;
-        const ALL = Self::TRANSPARENT_OCCLUDER.bits() | Self::GEOMETRIC_ONLY.bits();
+        #[allow(clippy::unnecessary_cast)]
+        const DIRECTIONAL_LIGHT = sb::SkShadowFlags_kDirectionalLight_ShadowFlag as u32;
+        #[allow(clippy::unnecessary_cast)]
+        const CONCAVE_BLUR_ONLY = sb::SkShadowFlags_kConcaveBlurOnly_ShadowFlag as u32;
+        const ALL = Self::TRANSPARENT_OCCLUDER.bits() | Self::GEOMETRIC_ONLY.bits()
+            | Self::DIRECTIONAL_LIGHT.bits() | Self::CONCAVE_BLUR_ONLY.bits();
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn draw_shadow(
-    canvas: &mut Canvas,
+    canvas: &Canvas,
     path: &Path,
     z_plane_params: impl Into<Point3>,
     light_pos: impl Into<Point3>,
@@ -63,7 +68,7 @@ pub fn local_bounds(
 impl Canvas {
     #[allow(clippy::too_many_arguments)]
     pub fn draw_shadow(
-        &mut self,
+        &self,
         path: &Path,
         z_plane_params: impl Into<Point3>,
         light_pos: impl Into<Point3>,
@@ -71,7 +76,7 @@ impl Canvas {
         ambient_color: impl Into<Color>,
         spot_color: impl Into<Color>,
         flags: impl Into<Option<ShadowFlags>>,
-    ) -> &mut Self {
+    ) -> &Self {
         draw_shadow(
             self,
             path,

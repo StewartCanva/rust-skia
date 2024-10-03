@@ -8,21 +8,17 @@ use super::prelude::*;
 pub struct MacOs;
 
 impl PlatformDetails for MacOs {
+    fn uses_freetype(&self, _config: &BuildConfiguration) -> bool {
+        false
+    }
+
     fn gn_args(&self, _config: &BuildConfiguration, builder: &mut GnArgsBuilder) {
         // Skia will take care to set a specific `--target` for the current macOS version. So we
         // don't push another target `--target` that may conflict.
         builder.target(None);
 
-        // Add macOS specific environment variables that affect the output of a
-        // build.
-        cargo::rerun_if_env_var_changed("MACOSX_DEPLOYMENT_TARGET");
-
         builder.target_os_and_default_cpu("mac");
         builder.cflags(flags());
-
-        builder
-            .arg("skia_use_system_freetype2", no())
-            .arg("skia_enable_fontmgr_custom_empty", yes());
     }
 
     fn bindgen_args(&self, _target: &Target, builder: &mut BindgenArgsBuilder) {
@@ -71,9 +67,11 @@ fn flags() -> Vec<String> {
 
     if let Some(deployment_target) = deployment_target {
         let deployment_target = deployment_target_6(&deployment_target);
-        return vec![format!(
-            "-D__MAC_OS_X_VERSION_MAX_ALLOWED={deployment_target}"
-        )];
+        // Both of them are needed, so that GR_METAL_SDK_VERSION is set to the correct version.
+        return vec![
+            format!("-D__MAC_OS_X_VERSION_MIN_REQUIRED={deployment_target}"),
+            format!("-D__MAC_OS_X_VERSION_MAX_ALLOWED={deployment_target}"),
+        ];
     }
     Vec::new()
 }
@@ -83,7 +81,7 @@ fn deployment_target_6(macosx_deployment_target: &str) -> String {
     // use remove_matches as soon it's stable.
     let split: Vec<_> = macosx_deployment_target.split('.').collect();
     let joined = split.join("");
-    dbg!(format!("{joined:0<6}"))
+    format!("{joined:0<6}")
 }
 
 /// Returns the current SDK path.
