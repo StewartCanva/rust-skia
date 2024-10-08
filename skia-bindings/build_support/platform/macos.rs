@@ -22,12 +22,6 @@ impl PlatformDetails for MacOs {
 
         builder
             .arg("skia_use_system_freetype2", no())
-            .arg("skia_use_freetype", yes())
-            .arg("skia_enable_pdf", yes())
-            .arg("skia_use_gl", no())
-            .arg("is_official_build", yes())
-            .arg("skia_use_metal", no())
-            .arg("skia_enable_tools", yes())
             .arg("skia_enable_fontmgr_custom_empty", yes());
     }
 
